@@ -12,13 +12,13 @@ pub enum Scope {
     Loop(Loop),
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Metadata {
     StartScope,
     EndScope,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum ExprT<'a> {
     StartOrStop(bool),
     Decision((&'a str, Scope)),
@@ -26,7 +26,7 @@ pub enum ExprT<'a> {
     Process(&'a str),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct Expr<'a> {
     pub expr: ExprT<'a>,
     pub meta: Option<Metadata>,
