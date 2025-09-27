@@ -41,23 +41,23 @@ pub fn delimit(s: &str) -> SplitWithMetadata<'_> {
             .char_indices()
             .next_back()
         {
-            let body = if ch == ';' || ch == '{' || ch == '}' {
-                part[..i].trim()
-            } else {
-                part.trim()
-            };
-            if !body.is_empty() {
-                acc.push((body, None));
-            }
+            acc.push((
+                if ch == ';' || ch == '{' || ch == '}' {
+                    part[..i].trim()
+                } else {
+                    part.trim()
+                },
+                None,
+            ));
             match ch {
                 '{' => {
-                    if let Some(last) = acc.last_mut() {
-                        last.1 = Some(Metadata::StartScope);
+                    if let Some((_, meta)) = acc.last_mut() {
+                        *meta = Some(Metadata::StartScope);
                     }
                 }
                 '}' => {
-                    if let Some(last) = acc.last_mut() {
-                        last.1 = Some(Metadata::EndScope);
+                    if let Some((_, meta)) = acc.last_mut() {
+                        *meta = Some(Metadata::EndScope);
                     }
                 }
                 _ => {}
@@ -92,7 +92,7 @@ pub fn process(strs: SplitWithMetadata<'_>) -> Vec<Expr<'_>> {
             }),
             None => exprs.push(Expr {
                 expr: ExprT::Process(str),
-                meta: None,
+                meta,
             }),
         }
     }
