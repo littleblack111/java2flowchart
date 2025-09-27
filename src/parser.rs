@@ -11,7 +11,7 @@ pub enum Scope {
 }
 
 #[derive(Debug)]
-pub enum Expression<'a> {
+pub enum Expr<'a> {
     StartOrStop(bool),
     Decision((&'a str, Scope)),
     IO(&'a str),
@@ -24,29 +24,33 @@ pub fn delimit(str: &str) -> Vec<&str> {
         .collect()
 }
 
-pub fn parse(strs: Vec<&str>) -> Vec<Expression<'_>> {
-    let mut expressions = Vec::new();
+pub fn process(strs: Vec<&str>) -> Vec<Expr<'_>> {
+    let mut exprs = Vec::new();
 
     for str in strs {
-        let mut exp: Option<Expression> = None;
+        let mut exp: Option<Expr> = None;
 
         // TODO: fix one line if else as not delimited by {}
         for s in str.split_whitespace() {
             if let Some(token) = tokenizer::parse(s) {
                 exp = match token {
-                    If(t) => Some(Expression::Decision((str, Scope::If(t.to_owned())))),
-                    Loop(t) => Some(Expression::Decision((str, Scope::Loop(t.to_owned())))),
-                    Throw => Some(Expression::IO(str)),
-                    IO => Some(Expression::IO(str)),
+                    If(t) => Some(Expr::Decision((str, Scope::If(t.to_owned())))),
+                    Loop(t) => Some(Expr::Decision((str, Scope::Loop(t.to_owned())))),
+                    Throw => Some(Expr::IO(str)),
+                    IO => Some(Expr::IO(str)),
                 }
             }
         }
 
         match exp {
-            Some(exp) => expressions.push(exp),
-            None => expressions.push(Expression::Process(str)),
+            Some(exp) => exprs.push(exp),
+            None => exprs.push(Expr::Process(str)),
         }
     }
 
-    expressions
+    exprs
+}
+
+pub fn parse(str: &str) -> Vec<Expr<'_>> {
+    process(delimit(str))
 }
