@@ -12,6 +12,8 @@ const COMPONENT_HEIGHT: u32 = 20;
 
 const DIRECTION_LINE_LENGTH: u32 = 20;
 
+const RESOLUTION_MULTIPLIER: u32 = 50;
+
 /*
 offset based mutation model, to avoid overflowing on previous image
 */
@@ -35,6 +37,10 @@ mod colors {
     ]);
 }
 
+const fn res(original: u32) -> u32 {
+    original * RESOLUTION_MULTIPLIER
+}
+
 fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Offset) {
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
@@ -49,20 +55,20 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
 
 fn draw_process(img: &mut DynamicImage, (curw, curh): &mut Offset) -> Offset {
     *curw = curw
-        .checked_sub(COMPONENT_WIDTH / 2)
+        .checked_sub(res(COMPONENT_WIDTH) / 2)
         .unwrap_or(0);
-    ext(img, &mut (*curw, *curh), &mut (COMPONENT_WIDTH, COMPONENT_HEIGHT));
-    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(COMPONENT_WIDTH, COMPONENT_HEIGHT), colors::PROCESS);
-    *curw += COMPONENT_WIDTH / 2;
-    *curh += COMPONENT_HEIGHT;
+    ext(img, &mut (*curw, *curh), &mut (res(COMPONENT_WIDTH), res(COMPONENT_HEIGHT)));
+    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(res(COMPONENT_WIDTH), res(COMPONENT_HEIGHT)), colors::PROCESS);
+    *curw += res(COMPONENT_WIDTH) / 2;
+    *curh += res(COMPONENT_HEIGHT);
     (*curw, *curh)
 }
 
 fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
-    ext(img, &mut (*oriw, *orih), &mut (10, DIRECTION_LINE_LENGTH)); // idk y but 10w is neede for it to work
+    ext(img, &mut (*oriw, *orih), &mut (res(10), res(DIRECTION_LINE_LENGTH))); // idk y but 10w is neede for it to work
     println!("{}", *oriw);
-    draw_line_segment_mut(img, (*oriw as f32, *orih as f32), (*oriw as f32, (*orih + DIRECTION_LINE_LENGTH) as f32), colors::DIRECT);
-    *orih += DIRECTION_LINE_LENGTH;
+    draw_line_segment_mut(img, (*oriw as f32, *orih as f32), (*oriw as f32, (*orih + res(DIRECTION_LINE_LENGTH)) as f32), colors::DIRECT);
+    *orih += res(DIRECTION_LINE_LENGTH);
     (*oriw, *orih)
 }
 
