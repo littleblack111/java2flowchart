@@ -73,14 +73,10 @@ pub fn process(strs: SplitWithMetadata<'_>) -> Vec<Expr<'_>> {
 
         // TODO: fix one line if else as not delimited by {}
         for s in str.split_whitespace() {
-            if let Some(token) = tokenizer::parse(if let len = s.len() {
-                if s.starts_with("println") {
-                    "println"
-                } else if s.starts_with("throw") {
-                    "throw"
-                } else {
-                    s
-                }
+            if let Some(token) = tokenizer::parse(if s.starts_with("println") {
+                "println"
+            } else if s.starts_with("throw") {
+                "throw"
             } else {
                 s
             }) {
