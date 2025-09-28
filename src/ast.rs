@@ -1,3 +1,4 @@
+use crate::tokenizer::If;
 use std::iter::Peekable;
 
 use crate::parser::{Expr, ExprT, Metadata, Scope};
@@ -30,10 +31,8 @@ pub fn parse<'a>(vec: &Vec<Expr<'a>>) -> Vec<DepthExpr<'a>> {
 
                 let else_branch = if let Some(n) = it.peek() {
                     match n.expr {
-                        ExprT::Decision((s, _)) => {
-                            if s.trim_start()
-                                .starts_with("else")
-                            {
+                        ExprT::Decision((_, scope)) => {
+                            if let Scope::If(If::Else) = scope {
                                 it.next();
                                 Some(Box::new(parse(&entire_scopes(&mut it))))
                             } else {
@@ -75,9 +74,6 @@ fn entire_scopes<'a>(it: &mut Peekable<std::slice::Iter<'_, Expr<'a>>>) -> Vec<E
     let mut scope_count: u32 = 1; // assume we already entered the scope
 
     for i in it {
-        if scope_count == 0 {
-            break;
-        }
         if let Some(meta) = i.meta {
             match meta {
                 Metadata::StartScope => {
@@ -93,6 +89,9 @@ fn entire_scopes<'a>(it: &mut Peekable<std::slice::Iter<'_, Expr<'a>>>) -> Vec<E
             }
         }
         exprs.push(*i);
+        if scope_count == 0 {
+            break;
+        }
     }
 
     exprs

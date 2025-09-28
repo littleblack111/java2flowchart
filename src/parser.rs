@@ -76,11 +76,16 @@ pub fn process(strs: SplitWithMetadata<'_>) -> Vec<Expr<'_>> {
         // TODO: fix one line if else as not delimited by {}
         for s in str.split_whitespace() {
             if let Some(token) = tokenizer::parse(s) {
-                exp = match token {
-                    If(t) => Some(ExprT::Decision((str, Scope::If(t.to_owned())))),
-                    Loop(t) => Some(ExprT::Decision((str, Scope::Loop(t.to_owned())))),
-                    Throw => Some(ExprT::IO(str)),
-                    IO => Some(ExprT::IO(str)),
+                match token {
+                    If(t) => {
+                        if let Some(ExprT::Decision((_, Scope::If(If::Else)))) = exp {
+                        } else {
+                            exp = Some(ExprT::Decision((str, Scope::If(t.to_owned()))));
+                        }
+                    }
+                    Loop(t) => exp = Some(ExprT::Decision((str, Scope::Loop(t.to_owned())))),
+                    Throw => exp = Some(ExprT::IO(str)),
+                    IO => exp = Some(ExprT::IO(str)),
                 }
             }
         }

@@ -2,7 +2,7 @@ use java2flowchart::ast::parse;
 use java2flowchart::parser;
 
 fn main() {
-    let test = "if (a) {if (a) {abcdsdf} else if {asd else if {}}}";
+    let test = "if (first) {firstthen; if (firstthenif) {firstthenifthen} else {firstthenelse}} else {firstelse}";
 
     println!("{:#?}", parse(&parser::parse(test)));
 }
