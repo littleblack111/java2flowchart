@@ -33,38 +33,36 @@ pub struct Expr<'a> {
 }
 
 pub fn delimit(s: &str) -> SplitWithMetadata<'_> {
-    s.split_inclusive([
-        ';', '{', '}',
-    ])
-    .fold(Vec::new(), |mut acc, part| {
-        if let Some((i, ch)) = part
-            .char_indices()
-            .next_back()
-        {
-            acc.push((
-                if ch == ';' || ch == '{' || ch == '}' {
-                    part[..i].trim()
-                } else {
-                    part.trim()
-                },
-                None,
-            ));
-            match ch {
-                '{' => {
-                    if let Some((_, meta)) = acc.last_mut() {
-                        *meta = Some(Metadata::StartScope);
+    s.split_inclusive(EXPRESSION_DELIMITERS)
+        .fold(Vec::new(), |mut acc, part| {
+            if let Some((i, ch)) = part
+                .char_indices()
+                .next_back()
+            {
+                acc.push((
+                    if ch == ';' || ch == '{' || ch == '}' {
+                        part[..i].trim()
+                    } else {
+                        part.trim()
+                    },
+                    None,
+                ));
+                match ch {
+                    '{' => {
+                        if let Some((_, meta)) = acc.last_mut() {
+                            *meta = Some(Metadata::StartScope);
+                        }
                     }
-                }
-                '}' => {
-                    if let Some((_, meta)) = acc.last_mut() {
-                        *meta = Some(Metadata::EndScope);
+                    '}' => {
+                        if let Some((_, meta)) = acc.last_mut() {
+                            *meta = Some(Metadata::EndScope);
+                        }
                     }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-        acc
-    })
+            acc
+        })
 }
 
 pub fn process(strs: SplitWithMetadata<'_>) -> Vec<Expr<'_>> {
