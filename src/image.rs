@@ -1,5 +1,5 @@
-use image::{ColorType, DynamicImage, GenericImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_cross_mut, draw_filled_circle_mut, draw_filled_rect_mut, draw_hollow_circle_mut, draw_hollow_rect_mut, draw_line_segment_mut};
+use image::{ColorType, DynamicImage, ImageBuffer, imageops};
+use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_line_segment_mut};
 use imageproc::rect::Rect;
 use std::path::Path;
 
@@ -10,6 +10,7 @@ type Offset = (u32, u32); // x, y or width, height
 const COMPONENT_WIDTH: u32 = 20;
 const COMPONENT_HEIGHT: u32 = 20;
 
+const DIRECTION_LINE_THICKNESS: u32 = 2;
 const DIRECTION_LINE_LENGTH: u32 = 20;
 
 const RESOLUTION_MULTIPLIER: u32 = 50;
@@ -45,10 +46,10 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
     let extedh = *exth + *curh;
-    if extedw < w || extedh < h {
+    if extedw <= w && extedh <= h {
         return;
     }
-    let mut resized = ImageBuffer::from_pixel(extedw, extedh, colors::BG);
+    let mut resized = ImageBuffer::from_pixel(w.max(extedw), h.max(extedh), colors::BG);
     imageops::overlay(&mut resized, img, 0, 0);
     *img = image::DynamicImage::ImageRgba8(resized);
 }
@@ -65,9 +66,12 @@ fn draw_process(img: &mut DynamicImage, (curw, curh): &mut Offset) -> Offset {
 }
 
 fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
-    ext(img, &mut (*oriw, *orih), &mut (res(10), res(DIRECTION_LINE_LENGTH))); // idk y but 10w is neede for it to work
-    println!("{}", *oriw);
-    draw_line_segment_mut(img, (*oriw as f32, *orih as f32), (*oriw as f32, (*orih + res(DIRECTION_LINE_LENGTH)) as f32), colors::DIRECT);
+    *oriw = oriw
+        .checked_sub(res(DIRECTION_LINE_THICKNESS) / 2)
+        .unwrap_or(0);
+    ext(img, &mut (*oriw, *orih), &mut (res(DIRECTION_LINE_THICKNESS), res(DIRECTION_LINE_LENGTH)));
+    draw_filled_rect_mut(img, Rect::at(*oriw as i32, *orih as i32).of_size(res(DIRECTION_LINE_THICKNESS), res(DIRECTION_LINE_LENGTH)), colors::DIRECT);
+    *oriw += res(DIRECTION_LINE_THICKNESS) / 2;
     *orih += res(DIRECTION_LINE_LENGTH);
     (*oriw, *orih)
 }
