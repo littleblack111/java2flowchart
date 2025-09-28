@@ -1,8 +1,15 @@
+use std::path::Path;
+
 use java2flowchart::ast::parse;
+use java2flowchart::image::create;
 use java2flowchart::parser;
 
 fn main() {
     let test = "if (first) {firstthen; if (firstthenif) {firstthenifthen} else {firstthenelse}} else {firstelse}println('a')";
 
-    println!("{:#?}", parse(&parser::parse(test)));
+    let ast = parse(&parser::parse(test));
+
+    println!("{:#?}", ast);
+
+    create(&ast, Path::new("output.png"));
 }
