@@ -8,18 +8,27 @@ use crate::ast::DepthExpr;
 
 type Offset = (u32, u32); // x, y or width, height
 
+// TODO: based on how much text
 const COMPONENT_WIDTH: u32 = 20 * RESOLUTION_MULTIPLIER;
 const COMPONENT_HEIGHT: u32 = 20 * RESOLUTION_MULTIPLIER;
 
-const DIRECTION_LINE_THICKNESS: u32 = 1 * RESOLUTION_MULTIPLIER;
-const DIRECTION_LINE_LENGTH: u32 = 10 * RESOLUTION_MULTIPLIER;
-const DIRECTION_LINE_ARROW_OFFSET: u32 = 3 * RESOLUTION_MULTIPLIER / 2;
+// TODO: LENGTH based on where to where
+const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER;
+const DIRECTION_LINE_LENGTH: u32 = 13 * RESOLUTION_MULTIPLIER;
+const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * RESOLUTION_MULTIPLIER / 2;
 
 const RESOLUTION_MULTIPLIER: u32 = 50;
 
 /*
 offset based mutation model, to avoid overflowing on previous image
 */
+
+enum Direction {
+    UP,
+    DOWN,
+    LEFT,
+    RIGHT,
+}
 
 mod colors {
     use image::Rgba;
