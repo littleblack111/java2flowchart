@@ -10,8 +10,7 @@ type Offset = (u32, u32); // x, y or width, height
 const COMPONENT_WIDTH: u32 = 20;
 const COMPONENT_HEIGHT: u32 = 20;
 
-const DIRECTION_LINE_HEIGHT: u32 = 100;
-const DIRECTION_LINE_WIDTH: u32 = 20;
+const DIRECTION_LINE_LENGTH: u32 = 20;
 
 /*
 offset based mutation model, to avoid overflowing on previous image
@@ -49,17 +48,21 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
 }
 
 fn draw_process(img: &mut DynamicImage, (curw, curh): &mut Offset) -> Offset {
+    *curw = curw
+        .checked_sub(COMPONENT_WIDTH / 2)
+        .unwrap_or(0);
     ext(img, &mut (*curw, *curh), &mut (COMPONENT_WIDTH, COMPONENT_HEIGHT));
     draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(COMPONENT_WIDTH, COMPONENT_HEIGHT), colors::PROCESS);
-    *curw = COMPONENT_WIDTH / 2;
+    *curw += COMPONENT_WIDTH / 2;
     *curh += COMPONENT_HEIGHT;
     (*curw, *curh)
 }
 
 fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
-    ext(img, &mut (*oriw, *orih), &mut (DIRECTION_LINE_WIDTH, DIRECTION_LINE_HEIGHT));
-    draw_line_segment_mut(img, (*oriw as f32, *orih as f32), ((*oriw + DIRECTION_LINE_WIDTH) as f32, (*orih + DIRECTION_LINE_HEIGHT) as f32), colors::DIRECT);
-    *orih += DIRECTION_LINE_HEIGHT;
+    ext(img, &mut (*oriw, *orih), &mut (10, DIRECTION_LINE_LENGTH)); // idk y but 10w is neede for it to work
+    println!("{}", *oriw);
+    draw_line_segment_mut(img, (*oriw as f32, *orih as f32), (*oriw as f32, (*orih + DIRECTION_LINE_LENGTH) as f32), colors::DIRECT);
+    *orih += DIRECTION_LINE_LENGTH;
     (*oriw, *orih)
 }
 
