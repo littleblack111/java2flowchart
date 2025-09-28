@@ -1,5 +1,6 @@
 use image::{ColorType, DynamicImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_line_segment_mut};
+use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut};
+use imageproc::point::Point;
 use imageproc::rect::Rect;
 use std::path::Path;
 
@@ -7,11 +8,12 @@ use crate::ast::DepthExpr;
 
 type Offset = (u32, u32); // x, y or width, height
 
-const COMPONENT_WIDTH: u32 = 20;
-const COMPONENT_HEIGHT: u32 = 20;
+const COMPONENT_WIDTH: u32 = 20 * RESOLUTION_MULTIPLIER;
+const COMPONENT_HEIGHT: u32 = 20 * RESOLUTION_MULTIPLIER;
 
-const DIRECTION_LINE_THICKNESS: u32 = 2;
-const DIRECTION_LINE_LENGTH: u32 = 20;
+const DIRECTION_LINE_THICKNESS: u32 = 1 * RESOLUTION_MULTIPLIER;
+const DIRECTION_LINE_LENGTH: u32 = 10 * RESOLUTION_MULTIPLIER;
+const DIRECTION_LINE_ARROW_OFFSET: u32 = 3 * RESOLUTION_MULTIPLIER / 2;
 
 const RESOLUTION_MULTIPLIER: u32 = 50;
 
@@ -38,10 +40,6 @@ mod colors {
     ]);
 }
 
-const fn res(original: u32) -> u32 {
-    original * RESOLUTION_MULTIPLIER
-}
-
 fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Offset) {
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
@@ -54,25 +52,52 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
     *img = image::DynamicImage::ImageRgba8(resized);
 }
 
+// TODO: make draw_rect func
 fn draw_process(img: &mut DynamicImage, (curw, curh): &mut Offset) -> Offset {
     *curw = curw
-        .checked_sub(res(COMPONENT_WIDTH) / 2)
+        .checked_sub(COMPONENT_WIDTH / 2)
         .unwrap_or(0);
-    ext(img, &mut (*curw, *curh), &mut (res(COMPONENT_WIDTH), res(COMPONENT_HEIGHT)));
-    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(res(COMPONENT_WIDTH), res(COMPONENT_HEIGHT)), colors::PROCESS);
-    *curw += res(COMPONENT_WIDTH) / 2;
-    *curh += res(COMPONENT_HEIGHT);
+    ext(img, &mut (*curw, *curh), &mut (COMPONENT_WIDTH, COMPONENT_HEIGHT));
+    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(COMPONENT_WIDTH, COMPONENT_HEIGHT), colors::PROCESS);
+    *curw += COMPONENT_WIDTH / 2;
+    *curh += COMPONENT_HEIGHT;
     (*curw, *curh)
 }
 
 fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
     *oriw = oriw
-        .checked_sub(res(DIRECTION_LINE_THICKNESS) / 2)
+        .checked_sub(DIRECTION_LINE_THICKNESS / 2)
         .unwrap_or(0);
-    ext(img, &mut (*oriw, *orih), &mut (res(DIRECTION_LINE_THICKNESS), res(DIRECTION_LINE_LENGTH)));
-    draw_filled_rect_mut(img, Rect::at(*oriw as i32, *orih as i32).of_size(res(DIRECTION_LINE_THICKNESS), res(DIRECTION_LINE_LENGTH)), colors::DIRECT);
-    *oriw += res(DIRECTION_LINE_THICKNESS) / 2;
-    *orih += res(DIRECTION_LINE_LENGTH);
+    ext(img, &mut (*oriw, *orih), &mut (DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH));
+    draw_filled_rect_mut(img, Rect::at(*oriw as i32, *orih as i32).of_size(DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET), colors::DIRECT);
+    *oriw += DIRECTION_LINE_THICKNESS / 2;
+    *orih += DIRECTION_LINE_LENGTH;
+
+    // arrow
+    let x = *oriw as i32;
+    let y = *orih as i32;
+    let offset = DIRECTION_LINE_ARROW_OFFSET as i32;
+    // left
+    draw_polygon_mut(
+        img,
+        &[
+            Point::new(x, y),
+            Point::new(x - offset, y - offset),
+            Point::new(x, y - offset),
+        ],
+        colors::DIRECT,
+    );
+    // right
+    draw_polygon_mut(
+        img,
+        &[
+            Point::new(x, y),
+            Point::new(x + offset, y - offset),
+            Point::new(x, y - offset),
+        ],
+        colors::DIRECT,
+    );
+
     (*oriw, *orih)
 }
 
