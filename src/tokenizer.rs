@@ -12,6 +12,7 @@ pub enum Loop {
     While,
 }
 
+#[derive(Debug)]
 pub enum Keyword {
     If(If),
     Loop(Loop),
