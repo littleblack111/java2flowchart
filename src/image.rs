@@ -74,25 +74,24 @@ fn get_font() -> Result<FontArc, io::Error> {
     let mut db = Database::new();
     db.load_system_fonts();
 
-    let id = db
-        .query(&Query {
-            families: &[Family::SansSerif],
-            weight: fontdb::Weight::NORMAL,
-            stretch: fontdb::Stretch::Normal,
-            style: fontdb::Style::Normal,
-        })
-        .or_else(|| {
-            db.faces()
-                .next()
-                .map(|f| f.id)
-        })
-        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no system fonts"))?;
-
-    let face = db
-        .face(id)
-        .ok_or_else(|| io::Error::other("face missing"))?;
-
-    match &face.source {
+    match &db
+        .face(
+            db.query(&Query {
+                families: &[Family::SansSerif],
+                weight: fontdb::Weight::NORMAL,
+                stretch: fontdb::Stretch::Normal,
+                style: fontdb::Style::Normal,
+            })
+            .or_else(|| {
+                db.faces()
+                    .next()
+                    .map(|f| f.id)
+            })
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no system fonts"))?,
+        )
+        .ok_or_else(|| io::Error::other("face missing"))?
+        .source
+    {
         Source::File(path) => std::fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
         Source::Binary(data) => FontArc::try_from_vec(
             data.as_ref()
