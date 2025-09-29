@@ -1,7 +1,7 @@
 use ab_glyph::{FontArc, PxScale};
 use fontdb::{Database, Family, Query, Source};
 use image::{ColorType, DynamicImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut};
+use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use std::io;
@@ -118,14 +118,12 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut N
 // TODO: make draw_rect func
 fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset) {
     let wrapped = wrap_str(txt);
-    let w = (TEXT_SCALE as u32 / 5
-        * if wrapped.len() <= 1 {
-            txt.len() as u32
-        } else {
-            TEXT_LEN_WRAP as u32
-        })
-        + (2 * COMPONENT_TEXT_PADDING);
-    let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING);
+
+    let pxscale = PxScale::from(TEXT_SCALE / 2_f32);
+    let font = &get_font().unwrap();
+    let (text_w, _) = text_size(pxscale, font, wrapped[0].as_str());
+    let w = text_w + (2 * COMPONENT_TEXT_PADDING);
+    let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
     ext(img, &mut (*c, *curh), &mut (w, h));
     let cw = c
         .checked_sub(w / 2)
@@ -133,7 +131,7 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
     draw_filled_rect_mut(img, Rect::at(cw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
     // TODO: move to draw_text()
     for s in wrapped {
-        draw_text_mut(img, colors::FG, cw as i32 + COMPONENT_TEXT_PADDING as i32, *curh as i32 + COMPONENT_TEXT_PADDING as i32, PxScale::from(TEXT_SCALE / 2_f32), &get_font().unwrap(), s.as_str());
+        draw_text_mut(img, colors::FG, cw as i32 + COMPONENT_TEXT_PADDING as i32, *curh as i32 + COMPONENT_TEXT_PADDING as i32, pxscale, font, s.as_str());
         *curh += TEXT_SCALE as u32 / 2;
     }
     if *c == 0 {
