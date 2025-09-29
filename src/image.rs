@@ -9,7 +9,8 @@ use std::path::Path;
 
 use crate::ast::DepthExpr;
 
-type Offset = (u32, u32); // x, y or width, height
+type Offset = (u32, u32, u32); // x, y or width, height center
+type NCOffset = (u32, u32);
 
 // TODO: based on how much text
 const COMPONENT_TEXT_PADDING: u32 = 1 * RESOLUTION_MULTIPLIER;
@@ -103,7 +104,7 @@ fn get_font() -> Result<FontArc, io::Error> {
     }
 }
 
-fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Offset) {
+fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut NCOffset) {
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
     let extedh = *exth + *curh;
@@ -116,48 +117,37 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
 }
 
 // TODO: make draw_rect func
-fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh): &mut Offset) -> Offset {
-    *curw = curw
-        .checked_sub(TEXT_SCALE as u32 * COMPONENT_TEXT_PADDING / 2)
+fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset) {
+    let wrapped = wrap_str(txt);
+    let w = (TEXT_SCALE as u32 / 5
+        * if wrapped.len() <= 1 {
+            txt.len() as u32
+        } else {
+            TEXT_LEN_WRAP as u32
+        })
+        + (2 * COMPONENT_TEXT_PADDING);
+    let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING);
+    ext(img, &mut (*c, *curh), &mut (w, h));
+    let cw = c
+        .checked_sub(w / 2)
         .unwrap_or(0);
-    let txt = wrap_str(txt);
-    let w = (TEXT_SCALE as u32 / 5 * TEXT_LEN_WRAP as u32) + (2 * COMPONENT_TEXT_PADDING);
-    let h = TEXT_SCALE as u32 / 2 * txt.len() as u32 + (2 * COMPONENT_TEXT_PADDING);
-    ext(img, &mut (*curw, *curh), &mut (w, h));
-    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
+    draw_filled_rect_mut(img, Rect::at(cw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
     // TODO: move to draw_text()
-    for s in txt {
-        draw_text_mut(
-            img,
-            colors::FG,
-            (*curw + COMPONENT_TEXT_PADDING)
-                .try_into()
-                .unwrap(),
-            (*curh + COMPONENT_TEXT_PADDING)
-                .try_into()
-                .unwrap(),
-            PxScale::from(TEXT_SCALE / 2_f32),
-            &get_font().unwrap(),
-            s.as_str(),
-        );
+    for s in wrapped {
+        draw_text_mut(img, colors::FG, cw as i32 + COMPONENT_TEXT_PADDING as i32, *curh as i32 + COMPONENT_TEXT_PADDING as i32, PxScale::from(TEXT_SCALE / 2_f32), &get_font().unwrap(), s.as_str());
         *curh += TEXT_SCALE as u32 / 2;
     }
-    *curw += w / 2;
+    *c = *curw + (w / 2);
     *curh += 2 * COMPONENT_TEXT_PADDING;
-    (*curw, *curh)
 }
 
-fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
-    *oriw = oriw
-        .checked_sub(DIRECTION_LINE_THICKNESS / 2)
-        .unwrap_or(0);
-    ext(img, &mut (*oriw, *orih), &mut (DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH));
-    draw_filled_rect_mut(img, Rect::at(*oriw as i32, *orih as i32).of_size(DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET), colors::DIRECT);
-    *oriw += DIRECTION_LINE_THICKNESS / 2;
+fn draw_direction(img: &mut DynamicImage, (oriw, orih, c): &mut Offset) {
+    ext(img, &mut (*c, *orih), &mut (DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH));
+    draw_filled_rect_mut(img, Rect::at(*c as i32 - (DIRECTION_LINE_THICKNESS as i32 / 2), *orih as i32).of_size(DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET), colors::DIRECT);
     *orih += DIRECTION_LINE_LENGTH;
 
     // arrow
-    let x = *oriw as i32;
+    let x = *c as i32;
     let y = *orih as i32;
     let offset = DIRECTION_LINE_ARROW_OFFSET as i32;
     // left
@@ -180,14 +170,12 @@ fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
         ],
         colors::DIRECT,
     );
-
-    (*oriw, *orih)
 }
 
 fn build(ast: &[DepthExpr]) -> DynamicImage {
     let mut img = DynamicImage::new(0, 0, ColorType::Rgba8);
     // TODO: move to mutable singleton
-    let mut offset = (0, 0);
+    let mut offset: Offset = (0, 0, 0);
     draw_process(&mut img, "abcdefghijklmnop", &mut offset);
     draw_direction(&mut img, &mut offset);
     draw_process(&mut img, "a", &mut offset);
