@@ -1,7 +1,7 @@
 use ab_glyph::{FontArc, PxScale};
 use fontdb::{Database, Family, Query, Source};
-use image::{ColorType, DynamicImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size};
+use image::{imageops, ColorType, DynamicImage, ImageBuffer};
+use imageproc::drawing::{draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size, Canvas};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use std::io;
@@ -28,13 +28,6 @@ const RESOLUTION_MULTIPLIER: u32 = 5;
 /*
 offset based mutation model, to avoid overflowing on previous image
 */
-
-enum Direction {
-    UP,
-    DOWN,
-    LEFT,
-    RIGHT,
-}
 
 mod colors {
     use image::Rgba;
@@ -140,10 +133,25 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
     *curh += 2 * COMPONENT_TEXT_PADDING;
 }
 
-fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset) {
-    ext(img, &mut (*c, *orih), &mut (DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH));
-    draw_filled_rect_mut(img, Rect::at(*c as i32 - (DIRECTION_LINE_THICKNESS as i32 / 2), *orih as i32).of_size(DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET), colors::DIRECT);
-    *orih += DIRECTION_LINE_LENGTH;
+fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option<&NCOffset>) {
+    let (srcx, srcy) = (*c - (DIRECTION_LINE_THICKNESS / 2), *orih);
+    let default = (srcx + DIRECTION_LINE_THICKNESS, srcy + DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET);
+    let (dstx, dsty) = dst.unwrap_or(&default);
+    ext(img, &mut (*c, *orih), &mut (dstx - *c, dsty - *c));
+    let (srcx, srcy) = (srcx as i32, srcy as i32);
+    let (dsty, dstx) = (*dsty as i32, *dstx as i32);
+    draw_polygon_mut(
+        img,
+        &[
+            Point::new(srcx, srcy),
+            Point::new(srcx, dsty),
+            Point::new(dstx, dsty),
+            Point::new(dstx, srcy),
+        ],
+        colors::DIRECT,
+    );
+
+    *orih = dsty as u32;
 
     // arrow
     let x = *c as i32;
@@ -176,15 +184,16 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
     // TODO: move to mutable singleton
     let mut offset: Offset = (0, 0, 0);
     draw_process(&mut img, "abcdefghijklmnop", &mut offset);
-    draw_direction(&mut img, &mut offset);
+    draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    draw_direction(&mut img, &mut offset);
+    draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    draw_direction(&mut img, &mut offset);
+    draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    draw_direction(&mut img, &mut offset);
+    draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    draw_direction(&mut img, &mut offset);
+    let (a, b) = (offset.2, offset.1);
+    draw_direction(&mut img, &mut offset, Some(&(a + 100, b + 1000)));
     draw_process(&mut img, "a", &mut offset);
 
     img
