@@ -23,7 +23,7 @@ const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER;
 const DIRECTION_LINE_LENGTH: u32 = 13 * RESOLUTION_MULTIPLIER;
 const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * RESOLUTION_MULTIPLIER / 2;
 
-const RESOLUTION_MULTIPLIER: u32 = 50;
+const RESOLUTION_MULTIPLIER: u32 = 5;
 
 /*
 offset based mutation model, to avoid overflowing on previous image
@@ -90,7 +90,7 @@ fn get_font() -> Result<FontArc, io::Error> {
 
     let face = db
         .face(id)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "face missing"))?;
+        .ok_or_else(|| io::Error::other("face missing"))?;
 
     match &face.source {
         Source::File(path) => std::fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
@@ -141,7 +141,7 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
     *curh += 2 * COMPONENT_TEXT_PADDING;
 }
 
-fn draw_direction(img: &mut DynamicImage, (oriw, orih, c): &mut Offset) {
+fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset) {
     ext(img, &mut (*c, *orih), &mut (DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH));
     draw_filled_rect_mut(img, Rect::at(*c as i32 - (DIRECTION_LINE_THICKNESS as i32 / 2), *orih as i32).of_size(DIRECTION_LINE_THICKNESS, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET), colors::DIRECT);
     *orih += DIRECTION_LINE_LENGTH;
