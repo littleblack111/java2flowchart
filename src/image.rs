@@ -137,7 +137,9 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
         draw_text_mut(img, colors::FG, cw as i32 + COMPONENT_TEXT_PADDING as i32, *curh as i32 + COMPONENT_TEXT_PADDING as i32, PxScale::from(TEXT_SCALE / 2_f32), &get_font().unwrap(), s.as_str());
         *curh += TEXT_SCALE as u32 / 2;
     }
-    *c = *curw + (w / 2);
+    if *c == 0 {
+        *c = *curw + (w / 2);
+    }
     *curh += 2 * COMPONENT_TEXT_PADDING;
 }
 
@@ -177,6 +179,14 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
     // TODO: move to mutable singleton
     let mut offset: Offset = (0, 0, 0);
     draw_process(&mut img, "abcdefghijklmnop", &mut offset);
+    draw_direction(&mut img, &mut offset);
+    draw_process(&mut img, "a", &mut offset);
+    draw_direction(&mut img, &mut offset);
+    draw_process(&mut img, "a", &mut offset);
+    draw_direction(&mut img, &mut offset);
+    draw_process(&mut img, "a", &mut offset);
+    draw_direction(&mut img, &mut offset);
+    draw_process(&mut img, "a", &mut offset);
     draw_direction(&mut img, &mut offset);
     draw_process(&mut img, "a", &mut offset);
 
