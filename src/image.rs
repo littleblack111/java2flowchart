@@ -1,7 +1,7 @@
 use ab_glyph::{FontArc, PxScale};
 use fontdb::{Database, Family, Query, Source};
-use image::{imageops, ColorType, DynamicImage, ImageBuffer};
-use imageproc::drawing::{draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size, Canvas};
+use image::{ColorType, DynamicImage, ImageBuffer, imageops};
+use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use std::path::Path;
@@ -19,7 +19,7 @@ const TEXT_SCALE: f32 = 12.0 * RESOLUTION_MULTIPLIER as f32;
 const TEXT_LEN_WRAP: usize = 10;
 
 // TODO: LENGTH based on where to where
-const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER;
+const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER / 2;
 const DIRECTION_LINE_LENGTH: u32 = 13 * RESOLUTION_MULTIPLIER;
 const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * RESOLUTION_MULTIPLIER / 2;
 
@@ -134,49 +134,76 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
 }
 
 fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option<&NCOffset>) {
-    let (srcx, srcy) = (*c - (DIRECTION_LINE_THICKNESS / 2), *orih);
-    let default = (srcx + DIRECTION_LINE_THICKNESS, srcy + DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET);
-    let (dstx, dsty) = dst.unwrap_or(&default);
-    ext(img, &mut (*c, *orih), &mut (dstx - *c, dsty - *c));
-    let (srcx, srcy) = (srcx as i32, srcy as i32);
-    let (dsty, dstx) = (*dsty as i32, *dstx as i32);
+    let srcx = *c as i32;
+    let srcy = *orih as i32;
+    let (dstx, dsty) = dst.unwrap_or(&(0, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET));
+    let dstx = srcx + *dstx as i32;
+    let dsty = srcy + *dsty as i32;
+
+    // perpendicular(thickness)
+    let xdiff = (dstx - srcx) as f32;
+    let ydiff = (dsty - srcy) as f32;
+    let length = (xdiff * xdiff + ydiff * ydiff)
+        .sqrt()
+        .max(1_f32);
+
+    let prepx = -ydiff / length;
+    let prepy = xdiff / length;
+
+    let linemaxx = (dstx as f32 - (xdiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
+    let linemaxy = (dsty as f32 - (ydiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
+
+    let line = [
+        Point::new((srcx as f32 - prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 - prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
+        Point::new((srcx as f32 + prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 + prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
+        Point::new((linemaxx as f32 + prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 + prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
+        Point::new((linemaxx as f32 - prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 - prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
+    ];
+
+    let xc = dstx as f32 - (xdiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32;
+    let yc = dsty as f32 - (ydiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32;
+
+    let left = Point::new((xc + prepx * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc + prepy * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
+    let right = Point::new((xc - prepx * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc - prepy * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
+    let tip = Point::new(dstx, dsty);
+    let center = Point::new(xc.round() as i32, yc.round() as i32);
+
+    let mut maxx = srcx.max(dstx);
+    let mut maxy = srcy.max(dsty);
+    for p in line
+        .iter()
+        .copied()
+        .chain([
+            tip, center, left, right,
+        ])
+    {
+        if p.x > maxx {
+            maxx = p.x;
+        }
+        if p.y > maxy {
+            maxy = p.y;
+        }
+    }
+    ext(img, &mut (*c, *orih), &mut (maxx.saturating_sub(*c as i32) as u32, maxy.saturating_sub(*orih as i32) as u32));
+
+    draw_polygon_mut(img, &line, colors::DIRECT);
     draw_polygon_mut(
         img,
         &[
-            Point::new(srcx, srcy),
-            Point::new(srcx, dsty),
-            Point::new(dstx, dsty),
-            Point::new(dstx, srcy),
+            tip, left, center,
+        ],
+        colors::DIRECT,
+    );
+    draw_polygon_mut(
+        img,
+        &[
+            tip, right, center,
         ],
         colors::DIRECT,
     );
 
+    *c = dstx as u32;
     *orih = dsty as u32;
-
-    // arrow
-    let x = *c as i32;
-    let y = *orih as i32;
-    let offset = DIRECTION_LINE_ARROW_OFFSET as i32;
-    // left
-    draw_polygon_mut(
-        img,
-        &[
-            Point::new(x, y),
-            Point::new(x - offset, y - offset),
-            Point::new(x, y - offset),
-        ],
-        colors::DIRECT,
-    );
-    // right
-    draw_polygon_mut(
-        img,
-        &[
-            Point::new(x, y),
-            Point::new(x + offset, y - offset),
-            Point::new(x, y - offset),
-        ],
-        colors::DIRECT,
-    );
 }
 
 fn build(ast: &[DepthExpr]) -> DynamicImage {
@@ -192,8 +219,7 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
     draw_process(&mut img, "a", &mut offset);
     draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    let (a, b) = (offset.2, offset.1);
-    draw_direction(&mut img, &mut offset, Some(&(a + 100, b + 1000)));
+    draw_direction(&mut img, &mut offset, Some(&(10, 100)));
     draw_process(&mut img, "a", &mut offset);
 
     img
