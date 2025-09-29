@@ -4,8 +4,8 @@ use image::{imageops, ColorType, DynamicImage, ImageBuffer};
 use imageproc::drawing::{draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size, Canvas};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
-use std::io;
 use std::path::Path;
+use std::{fs, io};
 
 use crate::ast::DepthExpr;
 
@@ -85,7 +85,7 @@ fn get_font() -> Result<FontArc, io::Error> {
         .ok_or_else(|| io::Error::other("face missing"))?
         .source
     {
-        Source::File(path) => std::fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
+        Source::File(path) => fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
         Source::Binary(data) => FontArc::try_from_vec(
             data.as_ref()
                 .as_ref()
