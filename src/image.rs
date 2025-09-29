@@ -136,11 +136,20 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset)
 fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option<&NCOffset>) {
     let srcx = *c as i32;
     let srcy = *orih as i32;
-    let (dstx, dsty) = dst.unwrap_or(&(0, DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET));
-    let dstx = srcx + *dstx as i32;
-    let dsty = srcy + *dsty as i32;
 
     // perpendicular(thickness)
+    let (dstx, dsty) = match dst {
+        Some(&(x, y)) => {
+            let dx = if x == 0 {
+                srcx
+            } else {
+                x as i32
+            };
+            (dx, y as i32)
+        }
+        None => (srcx, srcy + (DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET) as i32),
+    };
+
     let xdiff = (dstx - srcx) as f32;
     let ydiff = (dsty - srcy) as f32;
     let length = (xdiff * xdiff + ydiff * ydiff)
@@ -184,7 +193,7 @@ fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option
             maxy = p.y;
         }
     }
-    ext(img, &mut (*c, *orih), &mut (maxx.saturating_sub(*c as i32) as u32, maxy.saturating_sub(*orih as i32) as u32));
+    ext(img, &mut (*c, *orih), &mut (((maxx - *c as i32).max(0) as u32), ((maxy - *orih as i32).max(0) as u32)));
 
     draw_polygon_mut(img, &line, colors::DIRECT);
     draw_polygon_mut(
@@ -215,11 +224,12 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
     draw_process(&mut img, "a", &mut offset);
     draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
+    let (a, b, c) = offset.clone();
     draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
     draw_direction(&mut img, &mut offset, None);
     draw_process(&mut img, "a", &mut offset);
-    draw_direction(&mut img, &mut offset, Some(&(10, 100)));
+    draw_direction(&mut img, &mut offset, Some(&(a, b)));
     draw_process(&mut img, "a", &mut offset);
 
     img
