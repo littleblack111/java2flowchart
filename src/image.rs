@@ -1,7 +1,10 @@
+use ab_glyph::FontArc;
+use fontdb::{Database, Family, Query, Source};
 use image::{ColorType, DynamicImage, ImageBuffer, imageops};
 use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
+use std::io;
 use std::path::Path;
 
 use crate::ast::DepthExpr;
@@ -47,6 +50,41 @@ mod colors {
     pub const BG: Rgba<u8> = Rgba([
         0, 0, 0, 0,
     ]);
+}
+
+// TODO: store as singleton
+fn get_font() -> Result<FontArc, io::Error> {
+    let mut db = Database::new();
+    db.load_system_fonts();
+
+    let id = db
+        .query(&Query {
+            families: &[Family::SansSerif],
+            weight: fontdb::Weight::NORMAL,
+            stretch: fontdb::Stretch::Normal,
+            style: fontdb::Style::Normal,
+        })
+        .or_else(|| {
+            db.faces()
+                .next()
+                .map(|f| f.id)
+        })
+        .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no system fonts"))?;
+
+    let face = db
+        .face(id)
+        .ok_or_else(|| io::Error::new(io::ErrorKind::Other, "face missing"))?;
+
+    match &face.source {
+        Source::File(path) => std::fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
+        Source::Binary(data) => FontArc::try_from_vec(
+            data.as_ref()
+                .as_ref()
+                .to_vec(),
+        )
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed")),
+        _ => Err(io::Error::new(io::ErrorKind::Unsupported, "unsupported font source")),
+    }
 }
 
 fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Offset) {
