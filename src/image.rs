@@ -1,7 +1,7 @@
-use ab_glyph::FontArc;
+use ab_glyph::{FontArc, PxScale};
 use fontdb::{Database, Family, Query, Source};
 use image::{ColorType, DynamicImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut};
+use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut};
 use imageproc::point::Point;
 use imageproc::rect::Rect;
 use std::io;
@@ -12,8 +12,9 @@ use crate::ast::DepthExpr;
 type Offset = (u32, u32); // x, y or width, height
 
 // TODO: based on how much text
-const COMPONENT_WIDTH: u32 = 20 * RESOLUTION_MULTIPLIER;
-const COMPONENT_HEIGHT: u32 = 20 * RESOLUTION_MULTIPLIER;
+const COMPONENT_TEXT_PADDING: u32 = 1 * RESOLUTION_MULTIPLIER;
+
+const TEXT_SCALE: f32 = 12.0 * RESOLUTION_MULTIPLIER as f32;
 
 // TODO: LENGTH based on where to where
 const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER;
@@ -49,6 +50,9 @@ mod colors {
     ]);
     pub const BG: Rgba<u8> = Rgba([
         0, 0, 0, 0,
+    ]);
+    pub const FG: Rgba<u8> = Rgba([
+        255, 255, 255, 255,
     ]);
 }
 
@@ -100,14 +104,29 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut Offset, (extw, exth): &mut Off
 }
 
 // TODO: make draw_rect func
-fn draw_process(img: &mut DynamicImage, (curw, curh): &mut Offset) -> Offset {
+fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh): &mut Offset) -> Offset {
     *curw = curw
-        .checked_sub(COMPONENT_WIDTH / 2)
+        .checked_sub(TEXT_SCALE as u32 / 2)
         .unwrap_or(0);
-    ext(img, &mut (*curw, *curh), &mut (COMPONENT_WIDTH, COMPONENT_HEIGHT));
-    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(COMPONENT_WIDTH, COMPONENT_HEIGHT), colors::PROCESS);
-    *curw += COMPONENT_WIDTH / 2;
-    *curh += COMPONENT_HEIGHT;
+    let w = TEXT_SCALE as u32 + COMPONENT_TEXT_PADDING * 2;
+    let h = w;
+    ext(img, &mut (*curw, *curh), &mut (w, h));
+    draw_filled_rect_mut(img, Rect::at(*curw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
+    draw_text_mut(
+        img,
+        colors::FG,
+        (*curw + COMPONENT_TEXT_PADDING)
+            .try_into()
+            .unwrap(),
+        (*curh + COMPONENT_TEXT_PADDING)
+            .try_into()
+            .unwrap(),
+        PxScale::from(TEXT_SCALE / 2.0),
+        &get_font().unwrap(),
+        txt,
+    );
+    *curw += w / 2;
+    *curh += h;
     (*curw, *curh)
 }
 
@@ -150,10 +169,11 @@ fn draw_direction(img: &mut DynamicImage, (oriw, orih): &mut Offset) -> Offset {
 
 fn build(ast: &[DepthExpr]) -> DynamicImage {
     let mut img = DynamicImage::new(0, 0, ColorType::Rgba8);
+    // TODO: move to mutable singleton
     let mut offset = (0, 0);
-    draw_process(&mut img, &mut offset);
+    draw_process(&mut img, "abcdefghijklmnop", &mut offset);
     draw_direction(&mut img, &mut offset);
-    draw_process(&mut img, &mut offset);
+    draw_process(&mut img, "a", &mut offset);
 
     img
 }
