@@ -29,15 +29,30 @@ const RESOLUTION_MULTIPLIER: u32 = 5;
 offset based mutation model, to avoid overflowing on previous image
 */
 
-#[derive(PartialEq)]
+enum VHDirection {
+    Horizontal(HDirection),
+    Vertical(VDirection),
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum HDirection {
     Up,
     Down,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum VDirection {
     Left,
     Right,
+}
+
+trait Direction: Copy + Eq + core::fmt::Debug {}
+impl Direction for HDirection {}
+impl Direction for VDirection {}
+
+struct ComponentConfig<O: Direction, D: Direction> {
+    ori_direction: O,
+    dst_direction: D,
 }
 
 mod colors {
@@ -120,7 +135,8 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut N
 }
 
 // TODO: make draw_rect func
-fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset, dir: HDirection) {
+// TODO: Accept all directions
+fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset, config: ComponentConfig<HDirection, HDirection>) {
     let wrapped = wrap_str(txt);
 
     let pxscale = PxScale::from(TEXT_SCALE / 2_f32);
@@ -128,7 +144,7 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset,
     let (text_w, _) = text_size(pxscale, font, wrapped[0].as_str());
     let w = text_w + (2 * COMPONENT_TEXT_PADDING);
     let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
-    if dir == HDirection::Up {
+    if config.dst_direction == HDirection::Up {
         *curh -= h;
     }
     ext(img, &mut (*c, *curh), &mut (w, h));
@@ -233,18 +249,66 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
     let mut img = DynamicImage::new(0, 0, ColorType::Rgba8);
     // TODO: move to mutable singleton
     let mut offset: Offset = (0, 0, 0);
-    draw_process(&mut img, "abcdefghijklmnop", &mut offset, HDirection::Down);
+    draw_process(
+        &mut img,
+        "abcdefghijklmnop",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Down,
+        },
+    );
     draw_direction(&mut img, &mut offset, None);
-    draw_process(&mut img, "a", &mut offset, HDirection::Down);
+    draw_process(
+        &mut img,
+        "a",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Down,
+        },
+    );
     draw_direction(&mut img, &mut offset, None);
-    draw_process(&mut img, "a", &mut offset, HDirection::Down);
+    draw_process(
+        &mut img,
+        "a",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Down,
+        },
+    );
     let (a, b, c) = offset.clone();
     draw_direction(&mut img, &mut offset, None);
-    draw_process(&mut img, "a", &mut offset, HDirection::Down);
+    draw_process(
+        &mut img,
+        "a",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Down,
+        },
+    );
     draw_direction(&mut img, &mut offset, None);
-    draw_process(&mut img, "a", &mut offset, HDirection::Down);
+    draw_process(
+        &mut img,
+        "a",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Down,
+        },
+    );
     draw_direction(&mut img, &mut offset, Some(&(a + 100, b)));
-    draw_process(&mut img, "a", &mut offset, HDirection::Up);
+    draw_process(
+        &mut img,
+        "a",
+        &mut offset,
+        ComponentConfig {
+            ori_direction: HDirection::Down,
+            dst_direction: HDirection::Up,
+        },
+    );
 
     img
 }
