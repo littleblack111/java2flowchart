@@ -1,11 +1,16 @@
 use ab_glyph::{FontArc, PxScale};
 use fontdb::{Database, Family, Query, Source};
 use image::{ColorType, DynamicImage, ImageBuffer, imageops};
-use imageproc::drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size};
-use imageproc::point::Point;
-use imageproc::rect::Rect;
-use std::path::Path;
-use std::{fs, io};
+use imageproc::{
+    drawing::{Canvas, draw_filled_rect_mut, draw_polygon_mut, draw_text_mut, text_size},
+    point::Point,
+    rect::Rect,
+};
+use std::{
+    fs, io,
+    path::Path,
+    sync::{Mutex, MutexGuard, OnceLock},
+};
 
 use crate::ast::DepthExpr;
 
@@ -24,6 +29,62 @@ const DIRECTION_LINE_LENGTH: u32 = 13 * RESOLUTION_MULTIPLIER;
 const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * RESOLUTION_MULTIPLIER / 2;
 
 const RESOLUTION_MULTIPLIER: u32 = 5;
+
+static IMAGE: OnceLock<Mutex<DynamicImage>> = OnceLock::new();
+static OFFSET: OnceLock<Mutex<Offset>> = OnceLock::new();
+static FONT: OnceLock<FontArc> = OnceLock::new();
+
+fn get_image() -> MutexGuard<'static, DynamicImage> {
+    IMAGE
+        .get_or_init(|| Mutex::new(DynamicImage::new(0, 0, ColorType::Rgba8)))
+        .lock()
+        .unwrap()
+}
+
+fn get_offset() -> MutexGuard<'static, Offset> {
+    OFFSET
+        .get_or_init(|| Mutex::new((0, 0, 0)))
+        .lock()
+        .unwrap()
+}
+
+fn get_font() -> &'static FontArc {
+    FONT.get_or_init(|| {
+        let mut db = Database::new();
+        db.load_system_fonts();
+
+        let font_result = match &db
+            .face(
+                db.query(&Query {
+                    families: &[Family::SansSerif],
+                    weight: fontdb::Weight::NORMAL,
+                    stretch: fontdb::Stretch::Normal,
+                    style: fontdb::Style::Normal,
+                })
+                .or_else(|| {
+                    db.faces()
+                        .next()
+                        .map(|f| f.id)
+                })
+                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no system fonts"))
+                .expect("no system fonts"),
+            )
+            .ok_or_else(|| io::Error::other("face missing"))
+            .expect("face missing")
+            .source
+        {
+            Source::File(path) => fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
+            Source::Binary(data) => FontArc::try_from_vec(
+                data.as_ref()
+                    .as_ref()
+                    .to_vec(),
+            )
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed")),
+            _ => Err(io::Error::new(io::ErrorKind::Unsupported, "unsupported font source")),
+        };
+        font_result.expect("failed to load font")
+    })
+}
 
 /*
 offset based mutation model, to avoid overflowing on previous image
@@ -88,40 +149,6 @@ fn wrap_str(s: &str) -> Vec<String> {
         .collect()
 }
 
-// TODO: store as singleton
-fn get_font() -> Result<FontArc, io::Error> {
-    let mut db = Database::new();
-    db.load_system_fonts();
-
-    match &db
-        .face(
-            db.query(&Query {
-                families: &[Family::SansSerif],
-                weight: fontdb::Weight::NORMAL,
-                stretch: fontdb::Stretch::Normal,
-                style: fontdb::Style::Normal,
-            })
-            .or_else(|| {
-                db.faces()
-                    .next()
-                    .map(|f| f.id)
-            })
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no system fonts"))?,
-        )
-        .ok_or_else(|| io::Error::other("face missing"))?
-        .source
-    {
-        Source::File(path) => fs::read(path).and_then(|bytes| FontArc::try_from_vec(bytes).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed"))),
-        Source::Binary(data) => FontArc::try_from_vec(
-            data.as_ref()
-                .as_ref()
-                .to_vec(),
-        )
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed")),
-        _ => Err(io::Error::new(io::ErrorKind::Unsupported, "unsupported font source")),
-    }
-}
-
 fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut NCOffset) {
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
@@ -136,16 +163,20 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut N
 
 // TODO: make draw_rect func
 // TODO: Accept all directions
-fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset, config: ComponentConfig<HDirection, HDirection>) {
+fn draw_process(img: &mut DynamicImage, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
+    let (curw, curh, c) = &mut *get_offset();
+
     let wrapped = wrap_str(txt);
 
     let pxscale = PxScale::from(TEXT_SCALE / 2_f32);
-    let font = &get_font().unwrap();
+    let font = &get_font();
     let (text_w, _) = text_size(pxscale, font, wrapped[0].as_str());
     let w = text_w + (2 * COMPONENT_TEXT_PADDING);
     let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
     if config.dst_direction == HDirection::Up {
-        *curh -= h;
+        *curh = curh
+            .checked_sub(h)
+            .unwrap_or(0);
     }
     ext(img, &mut (*c, *curh), &mut (w, h));
     let cw = c
@@ -163,7 +194,9 @@ fn draw_process(img: &mut DynamicImage, txt: &str, (curw, curh, c): &mut Offset,
     *curh += 2 * COMPONENT_TEXT_PADDING;
 }
 
-fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option<&NCOffset>) {
+fn draw_direction(img: &mut DynamicImage, dst: Option<&NCOffset>) {
+    let (_, orih, c) = &mut *get_offset();
+
     let srcx = *c as i32;
     let srcy = *orih as i32;
 
@@ -247,63 +280,55 @@ fn draw_direction(img: &mut DynamicImage, (_, orih, c): &mut Offset, dst: Option
 
 fn build(ast: &[DepthExpr]) -> DynamicImage {
     let mut img = DynamicImage::new(0, 0, ColorType::Rgba8);
-    // TODO: move to mutable singleton
-    let mut offset: Offset = (0, 0, 0);
     draw_process(
         &mut img,
         "abcdefghijklmnop",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, &mut offset, None);
+    draw_direction(&mut img, None);
     draw_process(
         &mut img,
         "a",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, &mut offset, None);
+    draw_direction(&mut img, None);
     draw_process(
         &mut img,
         "a",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    let (a, b, c) = offset.clone();
-    draw_direction(&mut img, &mut offset, None);
+    let (a, b, c) = *get_offset();
+    draw_direction(&mut img, None);
     draw_process(
         &mut img,
         "a",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, &mut offset, None);
+    draw_direction(&mut img, None);
     draw_process(
         &mut img,
         "a",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, &mut offset, Some(&(a + 100, b)));
+    draw_direction(&mut img, Some(&(a + 100, b)));
     draw_process(
         &mut img,
         "a",
-        &mut offset,
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Up,
