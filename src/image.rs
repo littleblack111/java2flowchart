@@ -6,54 +6,49 @@ use imageproc::{
     point::Point,
     rect::Rect,
 };
-use std::{
-    fs, io,
-    path::Path,
-    sync::{Mutex, MutexGuard, OnceLock},
-};
+use std::{fs, io, path::Path};
 
 use crate::ast::DepthExpr;
 
-type Offset = (u32, u32, u32); // x, y or width, height center
-type NCOffset = (u32, u32);
+/*
+offset based mutation model, to avoid overflowing on previous image
+*/
 
-// TODO: based on how much text
-const COMPONENT_TEXT_PADDING: u32 = 1 * RESOLUTION_MULTIPLIER;
-
-const TEXT_SCALE: f32 = 12.0 * RESOLUTION_MULTIPLIER as f32;
-const TEXT_LEN_WRAP: usize = 10;
-
-// TODO: LENGTH based on where to where
-const DIRECTION_LINE_THICKNESS: u32 = 2 * RESOLUTION_MULTIPLIER / 2;
-const DIRECTION_LINE_LENGTH: u32 = 13 * RESOLUTION_MULTIPLIER;
-const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * RESOLUTION_MULTIPLIER / 2;
-
-const RESOLUTION_MULTIPLIER: u32 = 5;
-
-static IMAGE: OnceLock<Mutex<DynamicImage>> = OnceLock::new();
-static OFFSET: OnceLock<Mutex<Offset>> = OnceLock::new();
-static FONT: OnceLock<FontArc> = OnceLock::new();
-
-fn get_image() -> MutexGuard<'static, DynamicImage> {
-    IMAGE
-        .get_or_init(|| Mutex::new(DynamicImage::new(0, 0, ColorType::Rgba8)))
-        .lock()
-        .unwrap()
+struct FlowChart {
+    img: DynamicImage,
+    offset: Self::Offset,
+    font: FontArc,
 }
 
-fn get_offset() -> MutexGuard<'static, Offset> {
-    OFFSET
-        .get_or_init(|| Mutex::new((0, 0, 0)))
-        .lock()
-        .unwrap()
-}
+impl FlowChart {
+    type Offset = (u32, u32, u32); // x, y or width, height center
+    type NCOffset = (u32, u32);
+    // TODO: based on how much text
+    const COMPONENT_TEXT_PADDING: u32 = 1 * Self::RESOLUTION_MULTIPLIER;
 
-fn get_font() -> &'static FontArc {
-    FONT.get_or_init(|| {
+    const TEXT_SCALE: f32 = 12.0 * Self::RESOLUTION_MULTIPLIER as f32;
+    const TEXT_LEN_WRAP: usize = 10;
+
+    // TODO: LENGTH based on where to where
+    const DIRECTION_LINE_THICKNESS: u32 = 2 * Self::RESOLUTION_MULTIPLIER / 2;
+    const DIRECTION_LINE_LENGTH: u32 = 13 * Self::RESOLUTION_MULTIPLIER;
+    const DIRECTION_LINE_ARROW_OFFSET: u32 = 5 * Self::RESOLUTION_MULTIPLIER / 2;
+
+    const RESOLUTION_MULTIPLIER: u32 = 5;
+
+    fn new() -> Self {
+        Self {
+            img: DynamicImage::new(0, 0, ColorType::Rgba8),
+            offset: (0, 0, 0),
+            font: Self::get_system_font(),
+        }
+    }
+
+    fn get_system_font() -> FontArc {
         let mut db = Database::new();
         db.load_system_fonts();
 
-        let font_result = match &db
+        match &db
             .face(
                 db.query(&Query {
                     families: &[Family::SansSerif],
@@ -81,14 +76,210 @@ fn get_font() -> &'static FontArc {
             )
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "parse font failed")),
             _ => Err(io::Error::new(io::ErrorKind::Unsupported, "unsupported font source")),
-        };
-        font_result.expect("failed to load font")
-    })
-}
+        }
+        .expect("failed to load font")
+    }
+    fn wrap_str(s: &str) -> Vec<String> {
+        s.chars()
+            .collect::<Vec<_>>()
+            .chunks(Self::TEXT_LEN_WRAP)
+            .map(|c| {
+                c.iter()
+                    .collect()
+            })
+            .collect()
+    }
 
-/*
-offset based mutation model, to avoid overflowing on previous image
-*/
+    fn ext(&mut self, (curw, curh): &mut Self::NCOffset, (extw, exth): &mut Self::NCOffset) {
+        let mut img = &mut self.img;
+        let (w, h) = img.dimensions();
+        let extedw = *extw + *curw;
+        let extedh = *exth + *curh;
+        if extedw <= w && extedh <= h {
+            return;
+        }
+        let mut resized = ImageBuffer::from_pixel(w.max(extedw), h.max(extedh), colors::BG);
+        imageops::overlay(&mut resized, img, 0, 0);
+        *img = image::DynamicImage::ImageRgba8(resized);
+    }
+
+    // TODO: make draw_rect func
+    // TODO: Accept all directions
+    fn draw_process(&mut self, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
+        let curh = &mut self
+            .offset
+            .1;
+
+        let wrapped = Self::wrap_str(txt);
+
+        let pxscale = PxScale::from(Self::TEXT_SCALE / 2_f32);
+        let (text_w, _) = text_size(pxscale, &self.font, wrapped[0].as_str());
+        let w = text_w + (2 * Self::COMPONENT_TEXT_PADDING);
+        let h = Self::TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * Self::COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
+        if config.dst_direction == HDirection::Up {
+            *curh = curh
+                .checked_sub(h)
+                .unwrap_or(0);
+        }
+        drop(curh);
+        let (_, curh, c) = self.offset;
+        self.ext(&mut (c, curh), &mut (w, h));
+        let (curw, curh, c) = &mut self.offset;
+        let img = &mut self.img;
+        let cw = c
+            .checked_sub(w / 2)
+            .unwrap_or(0);
+        draw_filled_rect_mut(img, Rect::at(cw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
+        // TODO: move to draw_text()
+        for s in wrapped {
+            draw_text_mut(img, colors::FG, cw as i32 + Self::COMPONENT_TEXT_PADDING as i32, *curh as i32 + Self::COMPONENT_TEXT_PADDING as i32, pxscale, &self.font, s.as_str());
+            *curh += Self::TEXT_SCALE as u32 / 2;
+        }
+        if *c == 0 {
+            *c = *curw + (w / 2);
+        }
+        *curh += 2 * Self::COMPONENT_TEXT_PADDING;
+    }
+
+    fn draw_direction(&mut self, dst: Option<&Self::NCOffset>) {
+        let (_, orih, c) = self.offset;
+
+        let srcx = c as i32;
+        let srcy = orih as i32;
+
+        // perpendicular(thickness)
+        let (dstx, dsty) = match dst {
+            Some(&(x, y)) => {
+                let dx = if x == 0 {
+                    srcx
+                } else {
+                    x as i32
+                };
+                (dx, y as i32)
+            }
+            None => (srcx, srcy + (Self::DIRECTION_LINE_LENGTH - Self::DIRECTION_LINE_ARROW_OFFSET) as i32),
+        };
+
+        let xdiff = (dstx - srcx) as f32;
+        let ydiff = (dsty - srcy) as f32;
+        let length = (xdiff * xdiff + ydiff * ydiff)
+            .sqrt()
+            .max(1_f32);
+
+        let prepx = -ydiff / length;
+        let prepy = xdiff / length;
+
+        let linemaxx = (dstx as f32 - (xdiff / length) * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
+        let linemaxy = (dsty as f32 - (ydiff / length) * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
+
+        let line = [
+            Point::new((srcx as f32 - prepx * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 - prepy * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32),
+            Point::new((srcx as f32 + prepx * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 + prepy * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32),
+            Point::new((linemaxx as f32 + prepx * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 + prepy * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32),
+            Point::new((linemaxx as f32 - prepx * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 - prepy * Self::DIRECTION_LINE_THICKNESS as f32).round() as i32),
+        ];
+
+        let xc = dstx as f32 - (xdiff / length) * Self::DIRECTION_LINE_ARROW_OFFSET as f32;
+        let yc = dsty as f32 - (ydiff / length) * Self::DIRECTION_LINE_ARROW_OFFSET as f32;
+
+        let left = Point::new((xc + prepx * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc + prepy * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
+        let right = Point::new((xc - prepx * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc - prepy * Self::DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
+        let tip = Point::new(dstx, dsty);
+        let center = Point::new(xc.round() as i32, yc.round() as i32);
+
+        let mut maxx = srcx.max(dstx);
+        let mut maxy = srcy.max(dsty);
+        for p in line
+            .iter()
+            .copied()
+            .chain([
+                tip, center, left, right,
+            ])
+        {
+            if p.x > maxx {
+                maxx = p.x;
+            }
+            if p.y > maxy {
+                maxy = p.y;
+            }
+        }
+        self.ext(&mut (c, orih), &mut (((maxx - c as i32).max(0) as u32), ((maxy - orih as i32).max(0) as u32)));
+        let img = &mut self.img;
+
+        draw_polygon_mut(img, &line, colors::DIRECT);
+        draw_polygon_mut(
+            img,
+            &[
+                tip, left, center,
+            ],
+            colors::DIRECT,
+        );
+        draw_polygon_mut(
+            img,
+            &[
+                tip, right, center,
+            ],
+            colors::DIRECT,
+        );
+
+        // TODO: move to struct, this look like shit
+        self.offset
+            .2 = dstx as u32;
+        self.offset
+            .1 = dsty as u32;
+    }
+
+    fn build(&mut self, ast: &[DepthExpr]) {
+        self.draw_process(
+            "abcdefghijklmnospa",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Down,
+            },
+        );
+        self.draw_direction(None);
+        self.draw_process(
+            "ab",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Down,
+            },
+        );
+        self.draw_direction(None);
+        self.draw_process(
+            "a",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Down,
+            },
+        );
+        let (a, b, c) = self.offset;
+        self.draw_direction(None);
+        self.draw_process(
+            "a",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Down,
+            },
+        );
+        self.draw_direction(None);
+        self.draw_process(
+            "a",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Down,
+            },
+        );
+        self.draw_direction(Some(&(a + 100, b)));
+        self.draw_process(
+            "a",
+            ComponentConfig {
+                ori_direction: HDirection::Down,
+                dst_direction: HDirection::Up,
+            },
+        );
+    }
+}
 
 enum VHDirection {
     Horizontal(HDirection),
@@ -138,203 +329,11 @@ mod colors {
     ]);
 }
 
-fn wrap_str(s: &str) -> Vec<String> {
-    s.chars()
-        .collect::<Vec<_>>()
-        .chunks(TEXT_LEN_WRAP)
-        .map(|c| {
-            c.iter()
-                .collect()
-        })
-        .collect()
-}
-
-fn ext((curw, curh): &mut NCOffset, (extw, exth): &mut NCOffset) {
-    let img = &mut *get_image();
-    let (w, h) = img.dimensions();
-    let extedw = *extw + *curw;
-    let extedh = *exth + *curh;
-    if extedw <= w && extedh <= h {
-        return;
-    }
-    let mut resized = ImageBuffer::from_pixel(w.max(extedw), h.max(extedh), colors::BG);
-    imageops::overlay(&mut resized, img, 0, 0);
-    *img = image::DynamicImage::ImageRgba8(resized);
-}
-
-// TODO: make draw_rect func
-// TODO: Accept all directions
-fn draw_process(txt: &str, config: ComponentConfig<HDirection, HDirection>) {
-    let (curw, curh, c) = &mut *get_offset();
-
-    let wrapped = wrap_str(txt);
-
-    let pxscale = PxScale::from(TEXT_SCALE / 2_f32);
-    let font = &get_font();
-    let (text_w, _) = text_size(pxscale, font, wrapped[0].as_str());
-    let w = text_w + (2 * COMPONENT_TEXT_PADDING);
-    let h = TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
-    if config.dst_direction == HDirection::Up {
-        *curh = curh
-            .checked_sub(h)
-            .unwrap_or(0);
-    }
-    ext(&mut (*c, *curh), &mut (w, h));
-    let img = &mut *get_image();
-    let cw = c
-        .checked_sub(w / 2)
-        .unwrap_or(0);
-    draw_filled_rect_mut(img, Rect::at(cw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
-    // TODO: move to draw_text()
-    for s in wrapped {
-        draw_text_mut(img, colors::FG, cw as i32 + COMPONENT_TEXT_PADDING as i32, *curh as i32 + COMPONENT_TEXT_PADDING as i32, pxscale, font, s.as_str());
-        *curh += TEXT_SCALE as u32 / 2;
-    }
-    if *c == 0 {
-        *c = *curw + (w / 2);
-    }
-    *curh += 2 * COMPONENT_TEXT_PADDING;
-}
-
-fn draw_direction(dst: Option<&NCOffset>) {
-    let (_, orih, c) = &mut *get_offset();
-
-    let srcx = *c as i32;
-    let srcy = *orih as i32;
-
-    // perpendicular(thickness)
-    let (dstx, dsty) = match dst {
-        Some(&(x, y)) => {
-            let dx = if x == 0 {
-                srcx
-            } else {
-                x as i32
-            };
-            (dx, y as i32)
-        }
-        None => (srcx, srcy + (DIRECTION_LINE_LENGTH - DIRECTION_LINE_ARROW_OFFSET) as i32),
-    };
-
-    let xdiff = (dstx - srcx) as f32;
-    let ydiff = (dsty - srcy) as f32;
-    let length = (xdiff * xdiff + ydiff * ydiff)
-        .sqrt()
-        .max(1_f32);
-
-    let prepx = -ydiff / length;
-    let prepy = xdiff / length;
-
-    let linemaxx = (dstx as f32 - (xdiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
-    let linemaxy = (dsty as f32 - (ydiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32;
-
-    let line = [
-        Point::new((srcx as f32 - prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 - prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
-        Point::new((srcx as f32 + prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (srcy as f32 + prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
-        Point::new((linemaxx as f32 + prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 + prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
-        Point::new((linemaxx as f32 - prepx * DIRECTION_LINE_THICKNESS as f32).round() as i32, (linemaxy as f32 - prepy * DIRECTION_LINE_THICKNESS as f32).round() as i32),
-    ];
-
-    let xc = dstx as f32 - (xdiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32;
-    let yc = dsty as f32 - (ydiff / length) * DIRECTION_LINE_ARROW_OFFSET as f32;
-
-    let left = Point::new((xc + prepx * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc + prepy * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
-    let right = Point::new((xc - prepx * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32, (yc - prepy * DIRECTION_LINE_ARROW_OFFSET as f32).round() as i32);
-    let tip = Point::new(dstx, dsty);
-    let center = Point::new(xc.round() as i32, yc.round() as i32);
-
-    let mut maxx = srcx.max(dstx);
-    let mut maxy = srcy.max(dsty);
-    for p in line
-        .iter()
-        .copied()
-        .chain([
-            tip, center, left, right,
-        ])
-    {
-        if p.x > maxx {
-            maxx = p.x;
-        }
-        if p.y > maxy {
-            maxy = p.y;
-        }
-    }
-    ext(&mut (*c, *orih), &mut (((maxx - *c as i32).max(0) as u32), ((maxy - *orih as i32).max(0) as u32)));
-    let img = &mut *get_image();
-
-    draw_polygon_mut(img, &line, colors::DIRECT);
-    draw_polygon_mut(
-        img,
-        &[
-            tip, left, center,
-        ],
-        colors::DIRECT,
-    );
-    draw_polygon_mut(
-        img,
-        &[
-            tip, right, center,
-        ],
-        colors::DIRECT,
-    );
-
-    *c = dstx as u32;
-    *orih = dsty as u32;
-}
-
-fn build(ast: &[DepthExpr]) {
-    draw_process(
-        "abcdefghijklmnospa",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Down,
-        },
-    );
-    draw_direction(None);
-    draw_process(
-        "a",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Down,
-        },
-    );
-    draw_direction(None);
-    draw_process(
-        "a",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Down,
-        },
-    );
-    let (a, b, c) = *get_offset();
-    draw_direction(None);
-    draw_process(
-        "a",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Down,
-        },
-    );
-    draw_direction(None);
-    draw_process(
-        "a",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Down,
-        },
-    );
-    draw_direction(Some(&(a + 100, b)));
-    draw_process(
-        "a",
-        ComponentConfig {
-            ori_direction: HDirection::Down,
-            dst_direction: HDirection::Up,
-        },
-    );
-}
-
 pub fn create(ast: &[DepthExpr], path: &Path) {
-    build(ast);
-    get_image()
+    let mut chart = FlowChart::new();
+    chart.build(ast);
+    chart
+        .img
         .save(path)
         .unwrap();
 }
