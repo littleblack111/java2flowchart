@@ -149,7 +149,8 @@ fn wrap_str(s: &str) -> Vec<String> {
         .collect()
 }
 
-fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut NCOffset) {
+fn ext((curw, curh): &mut NCOffset, (extw, exth): &mut NCOffset) {
+    let img = &mut *get_image();
     let (w, h) = img.dimensions();
     let extedw = *extw + *curw;
     let extedh = *exth + *curh;
@@ -163,7 +164,7 @@ fn ext(img: &mut DynamicImage, (curw, curh): &mut NCOffset, (extw, exth): &mut N
 
 // TODO: make draw_rect func
 // TODO: Accept all directions
-fn draw_process(img: &mut DynamicImage, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
+fn draw_process(txt: &str, config: ComponentConfig<HDirection, HDirection>) {
     let (curw, curh, c) = &mut *get_offset();
 
     let wrapped = wrap_str(txt);
@@ -178,7 +179,8 @@ fn draw_process(img: &mut DynamicImage, txt: &str, config: ComponentConfig<HDire
             .checked_sub(h)
             .unwrap_or(0);
     }
-    ext(img, &mut (*c, *curh), &mut (w, h));
+    ext(&mut (*c, *curh), &mut (w, h));
+    let img = &mut *get_image();
     let cw = c
         .checked_sub(w / 2)
         .unwrap_or(0);
@@ -194,7 +196,7 @@ fn draw_process(img: &mut DynamicImage, txt: &str, config: ComponentConfig<HDire
     *curh += 2 * COMPONENT_TEXT_PADDING;
 }
 
-fn draw_direction(img: &mut DynamicImage, dst: Option<&NCOffset>) {
+fn draw_direction(dst: Option<&NCOffset>) {
     let (_, orih, c) = &mut *get_offset();
 
     let srcx = *c as i32;
@@ -256,7 +258,8 @@ fn draw_direction(img: &mut DynamicImage, dst: Option<&NCOffset>) {
             maxy = p.y;
         }
     }
-    ext(img, &mut (*c, *orih), &mut (((maxx - *c as i32).max(0) as u32), ((maxy - *orih as i32).max(0) as u32)));
+    ext(&mut (*c, *orih), &mut (((maxx - *c as i32).max(0) as u32), ((maxy - *orih as i32).max(0) as u32)));
+    let img = &mut *get_image();
 
     draw_polygon_mut(img, &line, colors::DIRECT);
     draw_polygon_mut(
@@ -278,28 +281,24 @@ fn draw_direction(img: &mut DynamicImage, dst: Option<&NCOffset>) {
     *orih = dsty as u32;
 }
 
-fn build(ast: &[DepthExpr]) -> DynamicImage {
-    let mut img = DynamicImage::new(0, 0, ColorType::Rgba8);
+fn build(ast: &[DepthExpr]) {
     draw_process(
-        &mut img,
-        "abcdefghijklmnop",
+        "abcdefghijklmnospa",
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, None);
+    draw_direction(None);
     draw_process(
-        &mut img,
         "a",
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, None);
+    draw_direction(None);
     draw_process(
-        &mut img,
         "a",
         ComponentConfig {
             ori_direction: HDirection::Down,
@@ -307,39 +306,35 @@ fn build(ast: &[DepthExpr]) -> DynamicImage {
         },
     );
     let (a, b, c) = *get_offset();
-    draw_direction(&mut img, None);
+    draw_direction(None);
     draw_process(
-        &mut img,
         "a",
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, None);
+    draw_direction(None);
     draw_process(
-        &mut img,
         "a",
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Down,
         },
     );
-    draw_direction(&mut img, Some(&(a + 100, b)));
+    draw_direction(Some(&(a + 100, b)));
     draw_process(
-        &mut img,
         "a",
         ComponentConfig {
             ori_direction: HDirection::Down,
             dst_direction: HDirection::Up,
         },
     );
-
-    img
 }
 
 pub fn create(ast: &[DepthExpr], path: &Path) {
-    build(ast)
+    build(ast);
+    get_image()
         .save(path)
         .unwrap();
 }
