@@ -16,13 +16,24 @@ offset based mutation model, to avoid overflowing on previous image
 
 struct FlowChart {
     img: DynamicImage,
-    offset: Self::Offset,
+    offset: Offset,
     font: FontArc,
 }
 
+#[derive(Clone, Copy)]
+struct Offset {
+    x: u32,
+    y: u32,
+    center: u32,
+}
+
+#[derive(Clone, Copy)]
+struct NCOffset {
+    x: u32,
+    y: u32,
+}
+
 impl FlowChart {
-    type Offset = (u32, u32, u32); // x, y or width, height center
-    type NCOffset = (u32, u32);
     // TODO: based on how much text
     const COMPONENT_TEXT_PADDING: u32 = 1 * Self::RESOLUTION_MULTIPLIER;
 
@@ -39,7 +50,11 @@ impl FlowChart {
     fn new() -> Self {
         Self {
             img: DynamicImage::new(0, 0, ColorType::Rgba8),
-            offset: (0, 0, 0),
+            offset: Offset {
+                x: 0,
+                y: 0,
+                center: 0,
+            },
             font: Self::get_system_font(),
         }
     }
@@ -90,7 +105,9 @@ impl FlowChart {
             .collect()
     }
 
-    fn ext(&mut self, (curw, curh): &mut Self::NCOffset, (extw, exth): &mut Self::NCOffset) {
+    fn ext(&mut self, offset: &mut NCOffset, ext: &mut NCOffset) {
+        let (curw, curh) = &mut (offset.x, offset.y);
+        let (extw, exth) = &mut (ext.x, ext.y);
         let mut img = &mut self.img;
         let (w, h) = img.dimensions();
         let extedw = *extw + *curw;
@@ -108,7 +125,7 @@ impl FlowChart {
     fn draw_process(&mut self, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
         let curh = &mut self
             .offset
-            .1;
+            .y;
 
         let wrapped = Self::wrap_str(txt);
 
@@ -121,10 +138,33 @@ impl FlowChart {
                 .checked_sub(h)
                 .unwrap_or(0);
         }
-        drop(curh);
-        let (_, curh, c) = self.offset;
-        self.ext(&mut (c, curh), &mut (w, h));
-        let (curw, curh, c) = &mut self.offset;
+        let (curh, c) = (
+            self.offset
+                .y,
+            self.offset
+                .center,
+        );
+        self.ext(
+            &mut NCOffset {
+                x: c,
+                y: curh,
+            },
+            &mut NCOffset {
+                x: w,
+                y: h,
+            },
+        );
+        let (curw, curh, c) = (
+            &mut self
+                .offset
+                .x,
+            &mut self
+                .offset
+                .y,
+            &mut self
+                .offset
+                .center,
+        );
         let img = &mut self.img;
         let cw = c
             .checked_sub(w / 2)
@@ -141,21 +181,26 @@ impl FlowChart {
         *curh += 2 * Self::COMPONENT_TEXT_PADDING;
     }
 
-    fn draw_direction(&mut self, dst: Option<&Self::NCOffset>) {
-        let (_, orih, c) = self.offset;
+    fn draw_direction(&mut self, dst: Option<&NCOffset>) {
+        let (orih, c) = (
+            self.offset
+                .y,
+            self.offset
+                .center,
+        );
 
         let srcx = c as i32;
         let srcy = orih as i32;
 
         // perpendicular(thickness)
         let (dstx, dsty) = match dst {
-            Some(&(x, y)) => {
-                let dx = if x == 0 {
+            Some(&offset) => {
+                let dx = if offset.x == 0 {
                     srcx
                 } else {
-                    x as i32
+                    offset.x as i32
                 };
-                (dx, y as i32)
+                (dx, offset.y as i32)
             }
             None => (srcx, srcy + (Self::DIRECTION_LINE_LENGTH - Self::DIRECTION_LINE_ARROW_OFFSET) as i32),
         };
@@ -203,7 +248,16 @@ impl FlowChart {
                 maxy = p.y;
             }
         }
-        self.ext(&mut (c, orih), &mut (((maxx - c as i32).max(0) as u32), ((maxy - orih as i32).max(0) as u32)));
+        self.ext(
+            &mut NCOffset {
+                x: c,
+                y: orih,
+            },
+            &mut NCOffset {
+                x: ((maxx - c as i32).max(0) as u32),
+                y: ((maxy - orih as i32).max(0) as u32),
+            },
+        );
         let img = &mut self.img;
 
         draw_polygon_mut(img, &line, colors::DIRECT);
@@ -222,11 +276,10 @@ impl FlowChart {
             colors::DIRECT,
         );
 
-        // TODO: move to struct, this look like shit
         self.offset
-            .2 = dstx as u32;
+            .center = dstx as u32;
         self.offset
-            .1 = dsty as u32;
+            .y = dsty as u32;
     }
 
     fn build(&mut self, ast: &[DepthExpr]) {
@@ -239,7 +292,7 @@ impl FlowChart {
         );
         self.draw_direction(None);
         self.draw_process(
-            "ab",
+            "abc",
             ComponentConfig {
                 ori_direction: HDirection::Down,
                 dst_direction: HDirection::Down,
@@ -253,7 +306,7 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        let (a, b, c) = self.offset;
+        let offset = self.offset;
         self.draw_direction(None);
         self.draw_process(
             "a",
@@ -270,7 +323,10 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        self.draw_direction(Some(&(a + 100, b)));
+        self.draw_direction(Some(&NCOffset {
+            x: offset.x + 100,
+            y: offset.y,
+        }));
         self.draw_process(
             "a",
             ComponentConfig {
