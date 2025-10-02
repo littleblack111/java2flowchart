@@ -14,7 +14,7 @@ use crate::ast::DepthExpr;
 offset based mutation model, to avoid overflowing on previous image
 */
 
-struct FlowChart {
+pub struct FlowChart {
     img: DynamicImage,
     offset: Offset,
     font: FontArc,
@@ -47,7 +47,7 @@ impl FlowChart {
 
     const RESOLUTION_MULTIPLIER: u32 = 5;
 
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             img: DynamicImage::new(0, 0, ColorType::Rgba8),
             offset: Offset {
@@ -57,6 +57,15 @@ impl FlowChart {
             },
             font: Self::get_system_font(),
         }
+    }
+
+    pub fn create(ast: &[DepthExpr], path: &Path) {
+        let mut chart = FlowChart::new();
+        chart.build(ast);
+        chart
+            .img
+            .save(path)
+            .unwrap();
     }
 
     fn get_system_font() -> FontArc {
@@ -383,13 +392,4 @@ mod colors {
     pub const FG: Rgba<u8> = Rgba([
         255, 255, 255, 255,
     ]);
-}
-
-pub fn create(ast: &[DepthExpr], path: &Path) {
-    let mut chart = FlowChart::new();
-    chart.build(ast);
-    chart
-        .img
-        .save(path)
-        .unwrap();
 }
