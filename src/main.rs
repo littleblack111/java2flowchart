@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use java2flowchart::ast::parse;
-use java2flowchart::image::create;
+use java2flowchart::image::FlowChart;
 use java2flowchart::parser;
 
 fn main() {
@@ -11,5 +11,5 @@ fn main() {
 
     println!("{:#?}", ast);
 
-    create(&ast, Path::new("output.png"));
+    FlowChart::create(&ast, Path::new("output.png"));
 }
