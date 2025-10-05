@@ -20,6 +20,8 @@ pub struct FlowChart {
     font: FontArc,
 }
 
+// TODO: change to i32, since we converted it to i32 already so the extra len of
+// u32 is useless
 #[derive(Clone, Copy)]
 struct Offset {
     x: u32,
@@ -117,7 +119,7 @@ impl FlowChart {
     fn ext(&mut self, offset: &mut NCOffset, ext: &mut NCOffset) {
         let (curw, curh) = &mut (offset.x, offset.y);
         let (extw, exth) = &mut (ext.x, ext.y);
-        let mut img = &mut self.img;
+        let img = &mut self.img;
         let (w, h) = img.dimensions();
         let extedw = *extw + *curw;
         let extedh = *exth + *curh;
@@ -129,6 +131,14 @@ impl FlowChart {
         *img = image::DynamicImage::ImageRgba8(resized);
     }
 
+    fn draw_text(&mut self, txts: &[&str], pxscale: &PxScale, offset: &mut NCOffset) {
+        let (curw, curh) = &mut (offset.x as i32, offset.y as i32);
+        for txt in txts {
+            draw_text_mut(&mut self.img, colors::FG, *curw + Self::COMPONENT_TEXT_PADDING as i32, *curh + Self::COMPONENT_TEXT_PADDING as i32, *pxscale, &self.font, txt);
+            *curh += Self::TEXT_SCALE as i32 / 2;
+        }
+    }
+
     // TODO: make draw_rect func
     // TODO: Accept all directions
     fn draw_process(&mut self, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
@@ -137,9 +147,13 @@ impl FlowChart {
             .y;
 
         let wrapped = Self::wrap_str(txt);
+        let wrapped: Vec<&str> = wrapped
+            .iter()
+            .map(|s| s.as_str())
+            .collect();
 
         let pxscale = PxScale::from(Self::TEXT_SCALE / 2_f32);
-        let (text_w, _) = text_size(pxscale, &self.font, wrapped[0].as_str());
+        let (text_w, _) = text_size(pxscale, &self.font, wrapped[0]);
         let w = text_w + (2 * Self::COMPONENT_TEXT_PADDING);
         let h = Self::TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * Self::COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
         if config.dst_direction == HDirection::Up {
@@ -164,33 +178,47 @@ impl FlowChart {
             },
         );
         let (curw, curh, c) = (
-            &mut self
-                .offset
+            self.offset
                 .x,
-            &mut self
-                .offset
+            self.offset
                 .y,
-            &mut self
-                .offset
+            self.offset
                 .center,
         );
-        let img = &mut self.img;
         let cw = c
             .checked_sub(w / 2)
             .unwrap_or(0);
-        draw_filled_rect_mut(img, Rect::at(cw as i32, *curh as i32).of_size(w, h), colors::PROCESS);
-        // TODO: move to draw_text()
-        for s in wrapped {
-            draw_text_mut(img, colors::FG, cw as i32 + Self::COMPONENT_TEXT_PADDING as i32, *curh as i32 + Self::COMPONENT_TEXT_PADDING as i32, pxscale, &self.font, s.as_str());
-            *curh += Self::TEXT_SCALE as u32 / 2;
+        draw_filled_rect_mut(&mut self.img, Rect::at(cw as i32, curh as i32).of_size(w, h), colors::PROCESS);
+        self.draw_text(
+            &wrapped,
+            &pxscale,
+            // FIXME: i don't think this works, we giving them derefed value
+            &mut NCOffset {
+                x: cw,
+                y: curh,
+            },
+        );
+        (
+            self.offset
+                .x,
+            self.offset
+                .y,
+            self.offset
+                .center,
+        ) = (curw, curh, c);
+        if self
+            .offset
+            .center
+            == 0
+        {
+            self.offset
+                .center = curw + (w / 2);
         }
-        if *c == 0 {
-            *c = *curw + (w / 2);
-        }
-        *curh += 2 * Self::COMPONENT_TEXT_PADDING;
+        self.offset
+            .y += 2 * Self::COMPONENT_TEXT_PADDING;
     }
 
-    fn draw_direction(&mut self, dst: Option<&NCOffset>) {
+    fn draw_direction(&mut self, src: Option<&NCOffset>, dst: Option<&NCOffset>) {
         let (orih, c) = (
             self.offset
                 .y,
@@ -198,8 +226,17 @@ impl FlowChart {
                 .center,
         );
 
-        let srcx = c as i32;
-        let srcy = orih as i32;
+        let (srcx, srcy) = match src {
+            Some(&offset) => {
+                let dx = if offset.x == 0 {
+                    c as i32
+                } else {
+                    offset.x as i32
+                };
+                (dx, offset.y as i32)
+            }
+            None => (c as i32, orih as i32),
+        };
 
         // perpendicular(thickness)
         let (dstx, dsty) = match dst {
@@ -292,6 +329,18 @@ impl FlowChart {
     }
 
     fn build(&mut self, ast: &[DepthExpr]) {
+        // for node in ast {
+        //     match node {
+        //         DepthExpr::Decision {
+        //             cond,
+        //             t,
+        //             then_branch,
+        //             else_branch,
+        //         } => todo!(),
+        //         DepthExpr::IO(_) => todo!(),
+        //         DepthExpr::Process(_) => todo!(),
+        //     }
+        // }
         self.draw_process(
             "abcdefghijklmnospa",
             ComponentConfig {
@@ -299,7 +348,7 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        self.draw_direction(None);
+        self.draw_direction(None, None);
         self.draw_process(
             "abc",
             ComponentConfig {
@@ -307,7 +356,7 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        self.draw_direction(None);
+        self.draw_direction(None, None);
         self.draw_process(
             "a",
             ComponentConfig {
@@ -316,7 +365,7 @@ impl FlowChart {
             },
         );
         let offset = self.offset;
-        self.draw_direction(None);
+        self.draw_direction(None, None);
         self.draw_process(
             "a",
             ComponentConfig {
@@ -324,7 +373,7 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        self.draw_direction(None);
+        self.draw_direction(None, None);
         self.draw_process(
             "a",
             ComponentConfig {
@@ -332,10 +381,13 @@ impl FlowChart {
                 dst_direction: HDirection::Down,
             },
         );
-        self.draw_direction(Some(&NCOffset {
-            x: offset.x + 100,
-            y: offset.y,
-        }));
+        self.draw_direction(
+            None,
+            Some(&NCOffset {
+                x: offset.x + 100,
+                y: offset.y,
+            }),
+        );
         self.draw_process(
             "a",
             ComponentConfig {
