@@ -6,7 +6,7 @@ use crate::parser::{Expr, ExprT, Metadata, Scope};
 #[derive(Clone, Debug)]
 pub enum DepthExpr<'a> {
     Decision {
-        cond: Box<DepthExpr<'a>>,
+        cond: Box<&'a str>, // TODO: take DepthExpr
         t: Scope,
         then_branch: Box<Vec<DepthExpr<'a>>>,
         else_branch: Option<Box<Vec<DepthExpr<'a>>>>,
@@ -25,8 +25,6 @@ pub fn parse<'a>(vec: &Vec<Expr<'a>>) -> Vec<DepthExpr<'a>> {
     while let Some(e) = it.next() {
         match e.expr {
             ExprT::Decision((cond, scope)) => {
-                let cond = DepthExpr::Process(cond);
-
                 let then_branch = parse(&entire_scopes(&mut it));
 
                 let else_branch = if let Some(n) = it.peek() {
