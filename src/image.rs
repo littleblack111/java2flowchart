@@ -6,7 +6,7 @@ use imageproc::{
     point::Point,
     rect::Rect,
 };
-use std::{fs, io, path::Path};
+use std::{fs, io, path::Path, slice};
 
 use crate::ast::DepthExpr;
 
@@ -14,23 +14,28 @@ use crate::ast::DepthExpr;
 offset based mutation model, to avoid overflowing on previous image
 */
 
-pub struct FlowChart {
+pub struct FlowChart<'a> {
     img: DynamicImage,
-    offset: Offset,
+    offset: Offset<'a>,
     font: FontArc,
 }
 
 // TODO: change to i32, since we converted it to i32 already so the extra len of
 // u32 is useless
-#[derive(Clone, Copy)]
-struct Offset {
-    x: u32,
-    y: u32,
+#[derive(Clone)]
+struct Offset<'a> {
+    offset: COffset,
+    col: slice::Iter<'a, COffset>,
+}
+
+#[derive(Clone)]
+struct COffset {
+    offset: RawOffset,
     center: u32,
 }
 
 #[derive(Clone, Copy, Debug)]
-struct NCOffset {
+struct RawOffset {
     x: u32,
     y: u32,
 }
@@ -40,13 +45,13 @@ struct MutNCOffset<'a> {
     y: &'a mut u32,
 }
 
-impl Default for FlowChart {
+impl<'a> Default for FlowChart<'a> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FlowChart {
+impl<'a> FlowChart<'a> {
     // TODO: based on how much text
     const COMPONENT_TEXT_PADDING: u32 = 1 * Self::RESOLUTION_MULTIPLIER;
 
@@ -64,9 +69,14 @@ impl FlowChart {
         Self {
             img: DynamicImage::new(0, 0, ColorType::Rgba8),
             offset: Offset {
-                x: 0,
-                y: 0,
-                center: 0,
+                offset: COffset {
+                    offset: RawOffset {
+                        x: 0,
+                        y: 0,
+                    },
+                    center: 0,
+                },
+                col: [].iter(),
             },
             font: Self::get_system_font(),
         }
@@ -127,7 +137,7 @@ impl FlowChart {
             .collect()
     }
 
-    fn ext(&mut self, offset: &mut NCOffset, ext: &mut NCOffset) {
+    fn ext(&mut self, offset: &mut RawOffset, ext: &mut RawOffset) {
         let (curw, curh) = &mut (offset.x, offset.y);
         let (extw, exth) = &mut (ext.x, ext.y);
         let img = &mut self.img;
@@ -152,8 +162,10 @@ impl FlowChart {
 
     // TODO: make draw_rect func
     // TODO: Accept all directions
-    fn draw_process(&mut self, txt: &str, src_dir: VDirection) -> NCOffset {
+    fn draw_process(&mut self, txt: &str, src_dir: VDirection) -> RawOffset {
         let curh = &mut self
+            .offset
+            .offset
             .offset
             .y;
 
@@ -174,26 +186,34 @@ impl FlowChart {
         }
         let (curh, c) = (
             self.offset
+                .offset
+                .offset
                 .y,
             self.offset
+                .offset
                 .center,
         );
         self.ext(
-            &mut NCOffset {
+            &mut RawOffset {
                 x: c,
                 y: curh,
             },
-            &mut NCOffset {
+            &mut RawOffset {
                 x: w,
                 y: h,
             },
         );
         let (curw, mut curh, c) = (
             self.offset
+                .offset
+                .offset
                 .x,
             self.offset
+                .offset
+                .offset
                 .y,
             self.offset
+                .offset
                 .center,
         );
         let mut cw = c.saturating_sub(w / 2);
@@ -209,33 +229,45 @@ impl FlowChart {
         );
         (
             self.offset
+                .offset
+                .offset
                 .x,
             self.offset
+                .offset
+                .offset
                 .y,
             self.offset
+                .offset
                 .center,
         ) = (curw, curh, c);
         if self
+            .offset
             .offset
             .center
             == 0
         {
             self.offset
+                .offset
                 .center = curw + (w / 2);
         }
         self.offset
+            .offset
+            .offset
             .y += 2 * Self::COMPONENT_TEXT_PADDING;
-        NCOffset {
+        RawOffset {
             x: w,
             y: h,
         }
     }
 
-    fn draw_direction(&mut self, src: Option<&NCOffset>, dst: Option<&NCOffset>) -> NCOffset {
+    fn draw_direction(&mut self, src: Option<&RawOffset>, dst: Option<&RawOffset>) -> RawOffset {
         let (orih, c) = (
             self.offset
+                .offset
+                .offset
                 .y,
             self.offset
+                .offset
                 .center,
         );
 
@@ -308,11 +340,11 @@ impl FlowChart {
             }
         }
         self.ext(
-            &mut NCOffset {
+            &mut RawOffset {
                 x: c,
                 y: orih,
             },
-            &mut NCOffset {
+            &mut RawOffset {
                 x: ((maxx - c as i32).max(0) as u32),
                 y: ((maxy - orih as i32).max(0) as u32),
             },
@@ -336,10 +368,13 @@ impl FlowChart {
         );
 
         self.offset
+            .offset
             .center = dstx as u32;
         self.offset
+            .offset
+            .offset
             .y = dsty as u32;
-        NCOffset {
+        RawOffset {
             x: ((maxx - c as i32).max(0) as u32),
             y: ((maxy - orih as i32).max(0) as u32),
         }
