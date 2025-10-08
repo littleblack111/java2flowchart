@@ -5,7 +5,7 @@ use java2flowchart::image::FlowChart;
 use java2flowchart::parser;
 
 fn main() {
-    let test = "if (first) {firstthen; if (firstthenif) {firstthenifthen} else {firstthenelse}} else {firstelse}println('a')";
+    let test = "first; if (first) {firstthen; if (firstthenif) {firstthenifthen} else {firstthenelse}} else {firstelse}println('a'); second; thirdlongprocess";
 
     let ast = parse(&parser::parse(test));
 

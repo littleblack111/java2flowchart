@@ -346,44 +346,52 @@ impl FlowChart {
     }
 
     fn build(&mut self, ast: &[DepthExpr]) {
-        // for node in ast {
-        //     match node {
-        //         DepthExpr::Decision {
-        //             cond,
-        //             t,
-        //             then_branch,
-        //             else_branch,
-        //         } => todo!(),
-        //         DepthExpr::IO(_) => todo!(),
-        //         DepthExpr::Process(_) => todo!(),
-        //     }
-        // }
-        self.draw_process("abcdefghijklmnospa", VDirection::Up);
-        self.draw_direction(None, None);
-        self.draw_process("abc", VDirection::Up);
-        self.draw_direction(None, None);
-        self.draw_process("a", VDirection::Up);
-        let offset = self.offset;
-        self.draw_direction(None, None);
-        self.draw_process("a", VDirection::Up);
-        self.draw_direction(None, None);
-        let a = self.draw_process("a", VDirection::Up);
-        self.draw_direction(
-            Some(&NCOffset {
-                x: self
-                    .offset
-                    .center,
-                y: self
-                    .offset
-                    .y
-                    - a.y,
-            }),
-            Some(&NCOffset {
-                x: offset.x + 100,
-                y: offset.y,
-            }),
-        );
-        self.draw_process("a", VDirection::Down);
+        for node in ast {
+            let mut skip_dir = false;
+            match node {
+                // DepthExpr::Decision {
+                //     cond,
+                //     t,
+                //     then_branch,
+                //     else_branch,
+                // } => todo!(),
+                // DepthExpr::IO(_) => todo!(),
+                DepthExpr::Process(s) => {
+                    println!("{}", s);
+                    self.draw_process(s, VDirection::Up);
+                }
+                _ => skip_dir = true,
+            };
+            if !skip_dir {
+                self.draw_direction(None, None);
+            }
+        }
+        // self.draw_process("abcdefghijklmnospa", VDirection::Up);
+        // self.draw_direction(None, None);
+        // self.draw_process("abc", VDirection::Up);
+        // self.draw_direction(None, None);
+        // self.draw_process("a", VDirection::Up);
+        // let offset = self.offset;
+        // self.draw_direction(None, None);
+        // self.draw_process("a", VDirection::Up);
+        // self.draw_direction(None, None);
+        // let a = self.draw_process("a", VDirection::Up);
+        // self.draw_direction(
+        //     Some(&NCOffset {
+        //         x: self
+        //             .offset
+        //             .center,
+        //         y: self
+        //             .offset
+        //             .y
+        //             - a.y,
+        //     }),
+        //     Some(&NCOffset {
+        //         x: offset.x + 100,
+        //         y: offset.y,
+        //     }),
+        // );
+        // self.draw_process("a", VDirection::Down);
     }
 }
 
