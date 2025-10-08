@@ -29,7 +29,7 @@ struct Offset {
     center: u32,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct NCOffset {
     x: u32,
     y: u32,
@@ -152,7 +152,7 @@ impl FlowChart {
 
     // TODO: make draw_rect func
     // TODO: Accept all directions
-    fn draw_process(&mut self, txt: &str, config: ComponentConfig<HDirection, HDirection>) {
+    fn draw_process(&mut self, txt: &str, src_dir: VDirection) -> NCOffset {
         let curh = &mut self
             .offset
             .y;
@@ -167,7 +167,7 @@ impl FlowChart {
         let (text_w, _) = text_size(pxscale, &self.font, wrapped[0]);
         let w = text_w + (2 * Self::COMPONENT_TEXT_PADDING);
         let h = Self::TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * Self::COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
-        if config.dst_direction == HDirection::Up {
+        if src_dir == VDirection::Down {
             *curh = curh
                 .checked_sub(h)
                 .unwrap_or(0);
@@ -225,9 +225,13 @@ impl FlowChart {
         }
         self.offset
             .y += 2 * Self::COMPONENT_TEXT_PADDING;
+        NCOffset {
+            x: w,
+            y: h,
+        }
     }
 
-    fn draw_direction(&mut self, src: Option<&NCOffset>, dst: Option<&NCOffset>) {
+    fn draw_direction(&mut self, src: Option<&NCOffset>, dst: Option<&NCOffset>) -> NCOffset {
         let (orih, c) = (
             self.offset
                 .y,
@@ -335,6 +339,10 @@ impl FlowChart {
             .center = dstx as u32;
         self.offset
             .y = dsty as u32;
+        NCOffset {
+            x: ((maxx - c as i32).max(0) as u32),
+            y: ((maxy - orih as i32).max(0) as u32),
+        }
     }
 
     fn build(&mut self, ast: &[DepthExpr]) {
@@ -350,60 +358,32 @@ impl FlowChart {
         //         DepthExpr::Process(_) => todo!(),
         //     }
         // }
-        self.draw_process(
-            "abcdefghijklmnospa",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Down,
-            },
-        );
+        self.draw_process("abcdefghijklmnospa", VDirection::Up);
         self.draw_direction(None, None);
-        self.draw_process(
-            "abc",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Down,
-            },
-        );
+        self.draw_process("abc", VDirection::Up);
         self.draw_direction(None, None);
-        self.draw_process(
-            "a",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Down,
-            },
-        );
+        self.draw_process("a", VDirection::Up);
         let offset = self.offset;
         self.draw_direction(None, None);
-        self.draw_process(
-            "a",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Down,
-            },
-        );
+        self.draw_process("a", VDirection::Up);
         self.draw_direction(None, None);
-        self.draw_process(
-            "a",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Down,
-            },
-        );
+        let a = self.draw_process("a", VDirection::Up);
         self.draw_direction(
-            None,
+            Some(&NCOffset {
+                x: self
+                    .offset
+                    .center,
+                y: self
+                    .offset
+                    .y
+                    - a.y,
+            }),
             Some(&NCOffset {
                 x: offset.x + 100,
                 y: offset.y,
             }),
         );
-        self.draw_process(
-            "a",
-            ComponentConfig {
-                ori_direction: HDirection::Down,
-                dst_direction: HDirection::Up,
-            },
-        );
+        self.draw_process("a", VDirection::Down);
     }
 }
 
@@ -414,14 +394,14 @@ enum VHDirection {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum HDirection {
-    Up,
-    Down,
+    Left,
+    Right,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 enum VDirection {
-    Left,
-    Right,
+    Up,
+    Down,
 }
 
 trait Direction: Copy + Eq + core::fmt::Debug {}
