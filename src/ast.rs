@@ -1,5 +1,5 @@
 use crate::tokenizer::If;
-use std::iter::Peekable;
+use std::{fmt::Display, iter::Peekable};
 
 use crate::parser::{Expr, ExprT, Metadata, Scope};
 
@@ -13,6 +13,20 @@ pub enum DepthExpr<'a> {
     },
     IO(&'a str),
     Process(&'a str),
+}
+
+impl<'a> Display for DepthExpr<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                DepthExpr::IO(s) => s.to_string(),
+                DepthExpr::Process(s) => s.to_string(),
+                _ => panic!("Cannot convert complex field to string"),
+            }
+        )
+    }
 }
 
 pub fn parse<'a>(vec: &Vec<Expr<'a>>) -> Vec<DepthExpr<'a>> {
