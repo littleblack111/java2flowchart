@@ -35,6 +35,11 @@ struct NCOffset {
     y: u32,
 }
 
+struct MutNCOffset<'a> {
+    x: &'a mut u32,
+    y: &'a mut u32,
+}
+
 impl FlowChart {
     // TODO: based on how much text
     const COMPONENT_TEXT_PADDING: u32 = 1 * Self::RESOLUTION_MULTIPLIER;
@@ -131,11 +136,11 @@ impl FlowChart {
         *img = image::DynamicImage::ImageRgba8(resized);
     }
 
-    fn draw_text(&mut self, txts: &[&str], pxscale: &PxScale, offset: &mut NCOffset) {
-        let (curw, curh) = &mut (offset.x as i32, offset.y as i32);
+    fn draw_text(&mut self, txts: &[&str], pxscale: &PxScale, offset: &mut MutNCOffset) {
+        let (curw, curh) = (&offset.x, &mut offset.y);
         for txt in txts {
-            draw_text_mut(&mut self.img, colors::FG, *curw + Self::COMPONENT_TEXT_PADDING as i32, *curh + Self::COMPONENT_TEXT_PADDING as i32, *pxscale, &self.font, txt);
-            *curh += Self::TEXT_SCALE as i32 / 2;
+            draw_text_mut(&mut self.img, colors::FG, **curw as i32 + Self::COMPONENT_TEXT_PADDING as i32, **curh as i32 + Self::COMPONENT_TEXT_PADDING as i32, *pxscale, &self.font, txt);
+            **curh += Self::TEXT_SCALE as u32 / 2;
         }
     }
 
@@ -177,7 +182,7 @@ impl FlowChart {
                 y: h,
             },
         );
-        let (curw, curh, c) = (
+        let (curw, mut curh, c) = (
             self.offset
                 .x,
             self.offset
@@ -185,7 +190,7 @@ impl FlowChart {
             self.offset
                 .center,
         );
-        let cw = c
+        let mut cw = c
             .checked_sub(w / 2)
             .unwrap_or(0);
         draw_filled_rect_mut(&mut self.img, Rect::at(cw as i32, curh as i32).of_size(w, h), colors::PROCESS);
@@ -193,9 +198,9 @@ impl FlowChart {
             &wrapped,
             &pxscale,
             // FIXME: i don't think this works, we giving them derefed value
-            &mut NCOffset {
-                x: cw,
-                y: curh,
+            &mut MutNCOffset {
+                x: &mut cw,
+                y: &mut curh,
             },
         );
         (
