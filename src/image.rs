@@ -40,6 +40,12 @@ struct MutNCOffset<'a> {
     y: &'a mut u32,
 }
 
+impl Default for FlowChart {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FlowChart {
     // TODO: based on how much text
     const COMPONENT_TEXT_PADDING: u32 = 1 * Self::RESOLUTION_MULTIPLIER;
@@ -190,9 +196,7 @@ impl FlowChart {
             self.offset
                 .center,
         );
-        let mut cw = c
-            .checked_sub(w / 2)
-            .unwrap_or(0);
+        let mut cw = c.saturating_sub(w / 2);
         draw_filled_rect_mut(&mut self.img, Rect::at(cw as i32, curh as i32).of_size(w, h), colors::PROCESS);
         self.draw_text(
             &wrapped,
