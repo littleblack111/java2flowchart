@@ -18,6 +18,8 @@ pub struct FlowChart<'a> {
     img: DynamicImage,
     offset: Offset<'a>,
     font: FontArc,
+    branches: Vec<u32>,
+    pxscale: PxScale,
 }
 
 // TODO: change to i32, since we converted it to i32 already so the extra len of
@@ -25,7 +27,8 @@ pub struct FlowChart<'a> {
 #[derive(Clone)]
 struct Offset<'a> {
     offset: COffset,
-    col: slice::Iter<'a, COffset>,
+    // center width
+    branch: slice::Iter<'a, u32>,
 }
 
 #[derive(Clone)]
@@ -76,9 +79,11 @@ impl<'a> FlowChart<'a> {
                     },
                     center: 0,
                 },
-                col: [].iter(),
+                branch: [].iter(),
             },
             font: Self::get_system_font(),
+            branches: vec![0],
+            pxscale: PxScale::from(Self::TEXT_SCALE / 2_f32), // no idea why can't I just do it at the const...
         }
     }
 
@@ -89,6 +94,92 @@ impl<'a> FlowChart<'a> {
             .img
             .save(path)
             .unwrap();
+    }
+
+    fn build(&mut self, ast: &[DepthExpr]) {
+        for node in ast {
+            let mut skip_dir = false;
+            match node {
+                // DepthExpr::Decision {
+                //     cond,
+                //     t,
+                //     then_branch,
+                //     else_branch,
+                // } => todo!(),
+                // DepthExpr::IO(_) => todo!(),
+                DepthExpr::Process(s) => {
+                    println!("{}", s);
+                    self.draw_process(s, VDirection::Up);
+                }
+                _ => skip_dir = true,
+            };
+            if !skip_dir {
+                self.draw_direction(None, None);
+            }
+        }
+        // self.draw_process("abcdefghijklmnospa", VDirection::Up);
+        // self.draw_direction(None, None);
+        // self.draw_process("abc", VDirection::Up);
+        // self.draw_direction(None, None);
+        // self.draw_process("a", VDirection::Up);
+        // let offset = self.offset;
+        // self.draw_direction(None, None);
+        // self.draw_process("a", VDirection::Up);
+        // self.draw_direction(None, None);
+        // let a = self.draw_process("a", VDirection::Up);
+        // self.draw_direction(
+        //     Some(&NCOffset {
+        //         x: self
+        //             .offset
+        //             .center,
+        //         y: self
+        //             .offset
+        //             .y
+        //             - a.y,
+        //     }),
+        //     Some(&NCOffset {
+        //         x: offset.x + 100,
+        //         y: offset.y,
+        //     }),
+        // );
+        // self.draw_process("a", VDirection::Down);
+    }
+
+    fn lookahead(&mut self, ast: &[DepthExpr]) {
+        let mut largest: u32 = 0;
+        let mut copy: Vec<_> = self
+            .branches
+            .to_vec();
+        let cur = copy.first();
+        copy.push(1);
+
+        for node in ast {
+            match node {
+                DepthExpr::Decision {
+                    cond,
+                    t: _,
+                    then_branch: _,
+                    else_branch: _,
+                } => {
+                    largest = largest.max(
+                        self.text_size(cond)
+                            .0,
+                    )
+                }
+                DepthExpr::IO(s) => {
+                    largest = largest.max(
+                        self.text_size(s)
+                            .0,
+                    )
+                }
+                DepthExpr::Process(s) => {
+                    largest = largest.max(
+                        self.text_size(s)
+                            .0,
+                    )
+                }
+            }
+        }
     }
 
     fn get_system_font() -> FontArc {
@@ -152,33 +243,34 @@ impl<'a> FlowChart<'a> {
         *img = image::DynamicImage::ImageRgba8(resized);
     }
 
-    fn draw_text(&mut self, txts: &[&str], pxscale: &PxScale, offset: &mut MutNCOffset) {
+    fn draw_text(&mut self, txts: &[&str], offset: &mut MutNCOffset) {
         let (curw, curh) = (&offset.x, &mut offset.y);
         for txt in txts {
-            draw_text_mut(&mut self.img, colors::FG, **curw as i32 + Self::COMPONENT_TEXT_PADDING as i32, **curh as i32 + Self::COMPONENT_TEXT_PADDING as i32, *pxscale, &self.font, txt);
+            draw_text_mut(&mut self.img, colors::FG, **curw as i32 + Self::COMPONENT_TEXT_PADDING as i32, **curh as i32 + Self::COMPONENT_TEXT_PADDING as i32, self.pxscale, &self.font, txt);
             **curh += Self::TEXT_SCALE as u32 / 2;
         }
+    }
+
+    fn text_size(&self, txt: &str) -> (u32, u32) {
+        text_size(self.pxscale, &self.font, txt)
     }
 
     // TODO: make draw_rect func
     // TODO: Accept all directions
     fn draw_process(&mut self, txt: &str, src_dir: VDirection) -> RawOffset {
-        let curh = &mut self
-            .offset
-            .offset
-            .offset
-            .y;
-
         let wrapped = Self::wrap_str(txt);
         let wrapped: Vec<&str> = wrapped
             .iter()
             .map(|s| s.as_str())
             .collect();
-
-        let pxscale = PxScale::from(Self::TEXT_SCALE / 2_f32);
-        let (text_w, _) = text_size(pxscale, &self.font, wrapped[0]);
+        let (text_w, _) = self.text_size(wrapped[0]);
         let w = text_w + (2 * Self::COMPONENT_TEXT_PADDING);
         let h = Self::TEXT_SCALE as u32 / 2 * wrapped.len() as u32 + (2 * Self::COMPONENT_TEXT_PADDING); // text_size's height is weird and incorrect
+        let curh = &mut self
+            .offset
+            .offset
+            .offset
+            .y;
         if src_dir == VDirection::Down {
             *curh = curh
                 .checked_sub(h)
@@ -220,7 +312,6 @@ impl<'a> FlowChart<'a> {
         draw_filled_rect_mut(&mut self.img, Rect::at(cw as i32, curh as i32).of_size(w, h), colors::PROCESS);
         self.draw_text(
             &wrapped,
-            &pxscale,
             // FIXME: i don't think this works, we giving them derefed value
             &mut MutNCOffset {
                 x: &mut cw,
@@ -378,55 +469,6 @@ impl<'a> FlowChart<'a> {
             x: ((maxx - c as i32).max(0) as u32),
             y: ((maxy - orih as i32).max(0) as u32),
         }
-    }
-
-    fn build(&mut self, ast: &[DepthExpr]) {
-        for node in ast {
-            let mut skip_dir = false;
-            match node {
-                // DepthExpr::Decision {
-                //     cond,
-                //     t,
-                //     then_branch,
-                //     else_branch,
-                // } => todo!(),
-                // DepthExpr::IO(_) => todo!(),
-                DepthExpr::Process(s) => {
-                    println!("{}", s);
-                    self.draw_process(s, VDirection::Up);
-                }
-                _ => skip_dir = true,
-            };
-            if !skip_dir {
-                self.draw_direction(None, None);
-            }
-        }
-        // self.draw_process("abcdefghijklmnospa", VDirection::Up);
-        // self.draw_direction(None, None);
-        // self.draw_process("abc", VDirection::Up);
-        // self.draw_direction(None, None);
-        // self.draw_process("a", VDirection::Up);
-        // let offset = self.offset;
-        // self.draw_direction(None, None);
-        // self.draw_process("a", VDirection::Up);
-        // self.draw_direction(None, None);
-        // let a = self.draw_process("a", VDirection::Up);
-        // self.draw_direction(
-        //     Some(&NCOffset {
-        //         x: self
-        //             .offset
-        //             .center,
-        //         y: self
-        //             .offset
-        //             .y
-        //             - a.y,
-        //     }),
-        //     Some(&NCOffset {
-        //         x: offset.x + 100,
-        //         y: offset.y,
-        //     }),
-        // );
-        // self.draw_process("a", VDirection::Down);
     }
 }
 
