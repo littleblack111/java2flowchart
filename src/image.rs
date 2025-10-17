@@ -146,12 +146,13 @@ impl<'a> FlowChart<'a> {
     }
 
     fn lookahead(&mut self, ast: &[DepthExpr]) {
-        let mut largest: u32 = 0;
-        let mut copy: Vec<_> = self
+        let mut branches = self
             .branches
-            .to_vec();
-        let cur = copy.first();
-        copy.push(1);
+            .clone();
+        branches.push(1);
+        let mut cur = branches
+            .iter_mut()
+            .peekable();
 
         for node in ast {
             match node {
@@ -161,22 +162,29 @@ impl<'a> FlowChart<'a> {
                     then_branch: _,
                     else_branch: _,
                 } => {
-                    largest = largest.max(
-                        self.text_size(cond)
-                            .0,
-                    )
+                    // TODO: use a map with unique new so new branches don't conflict
+                    if let Some(c) = cur.peek_mut() {
+                        **c = (**c).max(
+                            self.text_size(cond)
+                                .0,
+                        );
+                    }
                 }
                 DepthExpr::IO(s) => {
-                    largest = largest.max(
-                        self.text_size(s)
-                            .0,
-                    )
+                    if let Some(c) = cur.peek_mut() {
+                        **c = (**c).max(
+                            self.text_size(s)
+                                .0,
+                        );
+                    }
                 }
                 DepthExpr::Process(s) => {
-                    largest = largest.max(
-                        self.text_size(s)
-                            .0,
-                    )
+                    if let Some(c) = cur.peek_mut() {
+                        **c = (**c).max(
+                            self.text_size(s)
+                                .0,
+                        );
+                    }
                 }
             }
         }
